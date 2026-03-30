@@ -270,3 +270,172 @@
     box-shadow: 0 20px 60px rgba(0,0,0,0.6);
   }
 }
+/* ================================================
+   首页文章列表间距优化
+   ================================================ */
+/* 减小文章标题与摘要之间的间距 */
+.post-header {
+  margin-bottom: 10px !important;
+}
+/* 减小摘要与"阅读全文"按钮之间的间距 */
+.post-body {
+  margin-bottom: 15px !important;
+}
+/* 调整"阅读全文"按钮区域的上边距 */
+.post-button {
+  margin-top: 0 !important;
+}
+/* ================================================
+   深浅模式切换按钮
+   ================================================ */
+/* 切换按钮样式 */
+.theme-toggle-btn {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--content-bg-color);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  z-index: 1000;
+  color: var(--text-color);
+}
+/* 浅色模式下的切换按钮 */
+:root.light-mode .theme-toggle-btn {
+  background: #fff !important;
+  border-color: #ddd !important;
+  color: #555 !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+}
+:root.light-mode .theme-toggle-btn:hover {
+  background: #37c6c0 !important;
+  color: #fff !important;
+  border-color: #37c6c0 !important;
+}
+/* 深色模式下的切换按钮 */
+:root.dark-mode .theme-toggle-btn {
+  background: #2a2a2a !important;
+  border-color: #444 !important;
+  color: #ddd !important;
+}
+:root.dark-mode .theme-toggle-btn:hover {
+  background: #37c6c0 !important;
+  color: #fff !important;
+  border-color: #37c6c0 !important;
+}
+.theme-toggle-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 16px rgba(55,198,192,0.3);
+}
+.theme-toggle-icon {
+  font-size: 18px;
+  transition: transform 0.3s ease;
+}
+.theme-toggle-btn:hover .theme-toggle-icon {
+  transform: rotate(20deg);
+}
+/* ================================================
+   深浅模式 CSS 变量覆盖
+   ================================================ */
+/* 强制浅色模式 */
+:root.light-mode {
+  --body-bg-color: #f7f7f7 !important;
+  --content-bg-color: #fff !important;
+  --card-bg-color: #fff !important;
+  --text-color: #555 !important;
+  --border-color: #eee !important;
+  --link-color: #555 !important;
+  --link-hover-color: #37c6c0 !important;
+  --brand-color: #222 !important;
+  --brand-hover-color: #37c6c0 !important;
+  --blockquote-color: #666 !important;
+  --selection-bg: #37c6c0 !important;
+  --selection-color: #fff !important;
+  color-scheme: light !important;
+}
+/* 浅色模式下的侧边栏 */
+:root.light-mode .sidebar {
+  background: #fff !important;
+}
+/* 浅色模式下的博客标题区域 */
+:root.light-mode .site-brand-container {
+  background: #37c6c0 !important;
+  color: #fff !important;
+}
+:root.light-mode .site-title {
+  color: #fff !important;
+}
+:root.light-mode .site-subtitle {
+  color: rgba(255,255,255,0.9) !important;
+}
+:root.light-mode .site-author-name {
+  color: #222 !important;
+}
+:root.light-mode .site-description {
+  color: #666 !important;
+}
+/* 深色模式 */
+:root.dark-mode {
+  --body-bg-color: #1e1e1e !important;
+  --content-bg-color: #2a2a2a !important;
+  --card-bg-color: #333 !important;
+  --text-color: #ddd !important;
+  --border-color: #444 !important;
+  --link-color: #ddd !important;
+  --link-hover-color: #37c6c0 !important;
+  --brand-color: #fff !important;
+  --brand-hover-color: #37c6c0 !important;
+  --blockquote-color: #999 !important;
+  --selection-bg: #37c6c0 !important;
+  --selection-color: #fff !important;
+  color-scheme: dark !important;
+}
+/* 深色模式下图片透明度 */
+:root.dark-mode img {
+  opacity: 0.75;
+}
+:root.dark-mode img:hover {
+  opacity: 0.9;
+}
+/* 响应式：移动端调整按钮位置 */
+@media (max-width: 768px) {
+  .theme-toggle-btn {
+    top: 15px;
+    right: 15px;
+    width: 40px;
+    height: 40px;
+  }
+  .theme-toggle-icon {
+    font-size: 16px;
+  }
+}
+/* ================================================
+   代码块样式优化
+   ================================================ */
+/* 缩小代码块语言标签 */
+.code-lang {
+  font-size: 14px !important;
+  padding: 4px 10px !important;
+  font-weight: 600 !important;
+  opacity: 0.6 !important;
+  right: 8px !important;
+  top: 8px !important;
+}
+/* 缩小复制按钮 */
+.copy-btn {
+  font-size: 12px !important;
+  padding: 4px 8px !important;
+  line-height: 1.4 !important;
+}
+/* flat 样式的复制按钮 */
+.copy-btn {
+  right: 8px !important;
+  top: 8px !important;
+}
