@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: dark)"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"dcheric.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.27.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12,"width":300},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":true,"style":"flat"},"fold":{"enable":false,"height":500},"language":true},"bookmark":{"enable":true,"color":"#222","save":"auto"},"mediumzoom":true,"lazyload":true,"pangu":false,"comments":{"style":"tabs","active":"utterances","storage":true,"lazyload":false,"nav":null,"nav_id":"comments","activeClass":"utterances"},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"path":"/search.xml","localsearch":{"enable":true,"top_n_per_article":1,"unescape":false,"preload":false,"trigger":"auto"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Harness Engineering：说白了就是给AI搭个环境同样用 Claude 或 GPT，有人让 AI 写了几行代码就卡住了，有人却让 AI 连续工作 6 个小时，交付了一个完整的游戏。 一个极端的案例来自 OpenAI。3 名工程师，五个月，一行代码都没手写，指挥 Codex Agent 写了 100 万行代码，做出了一个真实的产品。有内测用户在用，有 bug 要修，有功能要加。整个开发">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Harness Engineering：AI Coding 时代如何做 AI Native Coder">
+<meta property="og:url" content="https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/index.html">
+<meta property="og:site_name" content="DCH&#39;s Blog">
+<meta property="og:description" content="Harness Engineering：说白了就是给AI搭个环境同样用 Claude 或 GPT，有人让 AI 写了几行代码就卡住了，有人却让 AI 连续工作 6 个小时，交付了一个完整的游戏。 一个极端的案例来自 OpenAI。3 名工程师，五个月，一行代码都没手写，指挥 Codex Agent 写了 100 万行代码，做出了一个真实的产品。有内测用户在用，有 bug 要修，有功能要加。整个开发">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-03-31T09:30:00.000Z">
+<meta property="article:modified_time" content="2026-03-31T09:25:37.752Z">
+<meta property="article:author" content="DCH">
+<meta property="article:tag" content="AI Coding">
+<meta property="article:tag" content="Harness Engineering">
+<meta property="article:tag" content="SDD">
+<meta property="article:tag" content="开发方法论">
+<meta property="article:tag" content="软件工程">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/","path":"2026/03/31/harness-engineering-ai-native-coder/","title":"Harness Engineering：AI Coding 时代如何做 AI Native Coder"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Harness Engineering：AI Coding 时代如何做 AI Native Coder | DCH's Blog</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/medium-zoom/1.1.0/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lozad.js/1.16.0/lozad.min.js" integrity="sha256-mOFREFhqmHeQbXpK2lp4nA3qooVgACfh88fpJftLBbc=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script><script src="/js/bookmark.js" defer></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/hexo-generator-searchdb/1.5.0/search.js" integrity="sha256-xFC6PJ82SL9b3WkGjFavNiA9gm5z6UBxWPiu4CYjptg=" crossorigin="anonymous" defer></script>
+<script src="/js/third-party/search/local-search.js" defer></script>
+
+
+  <script class="next-config" data-name="mermaid" type="application/json">{"enable":true,"theme":{"light":"default","dark":"dark"},"js":{"url":"https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.10.1/mermaid.min.js","integrity":"sha256-BmQmdWDS8X2OTbrwELWK366LV6escyWhHHe0XCTU/Hk="}}</script>
+  <script src="/js/third-party/tags/mermaid.js" defer></script>
+
+
+
+
+
+  
+
+
+
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quicklink/3.0.1/quicklink.umd.js" integrity="sha256-44BednzIpUeQJcY8qtLyarFu0UCCTbgmWOvaoehiFQQ=" crossorigin="anonymous" defer></script>
+  <script class="next-config" data-name="quicklink" type="application/json">{"enable":true,"home":true,"archive":true,"delay":true,"timeout":3000,"priority":true,"url":"https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/"}</script>
+  <script src="/js/third-party/quicklink.js" defer></script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">DCH's Blog</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">故乡的樱花开了，该回去看看了</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+      <div class="search-header">
+        <span class="search-icon">
+          <i class="fa fa-search"></i>
+        </span>
+        <div class="search-input-container">
+          <input autocomplete="off" autocapitalize="off" maxlength="80"
+                placeholder="搜索..." spellcheck="false"
+                type="search" class="search-input">
+        </div>
+        <span class="popup-btn-close" role="button">
+          <i class="fa fa-times-circle"></i>
+        </span>
+      </div>
+      <div class="search-result-container">
+        <div class="search-result-icon">
+          <i class="fa fa-spinner fa-pulse fa-5x"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Harness-Engineering%EF%BC%9A%E8%AF%B4%E7%99%BD%E4%BA%86%E5%B0%B1%E6%98%AF%E7%BB%99AI%E6%90%AD%E4%B8%AA%E7%8E%AF%E5%A2%83"><span class="nav-number">1.</span> <span class="nav-text">Harness Engineering：说白了就是给AI搭个环境</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%9B%B8%E5%85%B3%E8%B5%84%E6%BA%90"><span class="nav-number">2.</span> <span class="nav-text">相关资源</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Agent-Model-Harness"><span class="nav-number">3.</span> <span class="nav-text">Agent &#x3D; Model + Harness</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E9%98%B6%E6%AE%B5%EF%BC%9A%E4%BB%8E%E4%BC%A0%E7%BB%9F%E7%BC%96%E7%A8%8B%E5%88%B0Vibe-Coding"><span class="nav-number">4.</span> <span class="nav-text">第一阶段：从传统编程到Vibe Coding</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Vibe-Coding-%E5%AD%A6%E4%B9%A0%E8%B5%84%E6%BA%90"><span class="nav-number">4.1.</span> <span class="nav-text">Vibe Coding 学习资源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Vibe-Coding-%E7%9A%84%E5%B1%80%E9%99%90%E6%80%A7"><span class="nav-number">4.2.</span> <span class="nav-text">Vibe Coding 的局限性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E9%98%B6%E6%AE%B5%EF%BC%9A%E6%8E%8C%E6%8F%A1%E8%AE%A9AI%E6%8C%81%E7%BB%AD%E5%AF%B9%E9%BD%90%E7%9A%84%E8%83%BD%E5%8A%9B"><span class="nav-number">5.</span> <span class="nav-text">第二阶段：掌握让AI持续对齐的能力</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%AE%A9AI%E6%8C%81%E7%BB%AD%E5%AF%B9%E9%BD%90%E4%BD%A0%E7%9A%84%E6%84%8F%E5%9B%BE"><span class="nav-number">5.1.</span> <span class="nav-text">1. 让AI持续对齐你的意图</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%AE%A9AI%E6%8C%81%E7%BB%AD%E5%AF%B9%E9%BD%90%E4%BD%A0%E7%9A%84%E4%BB%BB%E5%8A%A1"><span class="nav-number">5.2.</span> <span class="nav-text">2. 让AI持续对齐你的任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%9F%BA%E4%BA%8E%E6%96%87%E4%BB%B6%E7%9A%84AI-Coding%E6%96%B9%E6%A1%88"><span class="nav-number">5.3.</span> <span class="nav-text">3. 基于文件的AI Coding方案</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E9%98%B6%E6%AE%B5%EF%BC%9A%E4%BB%8E%E4%B8%AA%E4%BA%BA%E6%8F%90%E6%95%88%E5%88%B0%E5%9B%A2%E9%98%9F%E5%8D%8F%E4%BD%9C%E7%9A%84SDD-Coding"><span class="nav-number">6.</span> <span class="nav-text">第三阶段：从个人提效到团队协作的SDD Coding</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%BD%AF%E4%BB%B6%E5%BC%80%E5%8F%91%E5%8D%8F%E4%BD%9C%E8%8C%83%E5%BC%8F%E6%BC%94%E5%8F%98"><span class="nav-number">6.1.</span> <span class="nav-text">1. 软件开发协作范式演变</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BB%80%E4%B9%88%E6%98%AFSDD-Coding"><span class="nav-number">6.2.</span> <span class="nav-text">2. 什么是SDD Coding</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#SDD-Coding-%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B"><span class="nav-number">6.3.</span> <span class="nav-text">SDD Coding 核心流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%A7%84%E8%8C%83%E6%98%AFAI-Coding%E6%97%B6%E4%BB%A3%E7%9A%84%E5%9B%A2%E9%98%9F%E8%B5%84%E4%BA%A7"><span class="nav-number">6.4.</span> <span class="nav-text">3. 规范是AI Coding时代的团队资产</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%B8%89%E7%B1%BB%E5%9B%A2%E9%98%9F%E7%9F%A5%E8%AF%86%E8%B5%84%E4%BA%A7"><span class="nav-number">6.4.1.</span> <span class="nav-text">三类团队知识资产</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-SDD-Coding%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C"><span class="nav-number">6.5.</span> <span class="nav-text">4. SDD Coding实战经验</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E9%A1%BE%E8%99%91%E4%B8%80%EF%BC%9A%E5%85%88%E5%86%99%E8%A7%84%E8%8C%83%EF%BC%8C%E4%BC%9A%E4%B8%8D%E4%BC%9A%E6%8B%96%E6%85%A2%E5%BC%80%E5%8F%91%E9%80%9F%E5%BA%A6%EF%BC%9F"><span class="nav-number">6.5.1.</span> <span class="nav-text">顾虑一：先写规范，会不会拖慢开发速度？</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E9%A1%BE%E8%99%91%E4%BA%8C%EF%BC%9A%E5%A6%82%E6%9E%9CAI%E8%AF%AF%E8%A7%A3%E4%BA%86%E8%A7%84%E8%8C%83%E6%80%8E%E4%B9%88%E5%8A%9E%EF%BC%9F"><span class="nav-number">6.5.2.</span> <span class="nav-text">顾虑二：如果AI误解了规范怎么办？</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E9%A1%BE%E8%99%91%E4%B8%89%EF%BC%9A%E5%A6%82%E4%BD%95%E9%80%89%E5%8F%96%E8%A7%84%E8%8C%83%E6%A8%A1%E7%89%88%E5%B9%B6%E5%BD%A2%E6%88%90%E8%87%AA%E5%B7%B1%E5%9B%A2%E9%98%9F%E7%9A%84%E8%A7%84%E8%8C%83%EF%BC%9F"><span class="nav-number">6.5.3.</span> <span class="nav-text">顾虑三：如何选取规范模版并形成自己团队的规范？</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AC%AC%E5%9B%9B%E9%98%B6%E6%AE%B5%EF%BC%9A%E6%8A%8AAI%E4%BD%BF%E7%94%A8%E5%86%85%E5%8C%96%E4%B8%BA%E6%9C%AC%E8%83%BD%EF%BC%8C%E6%88%90%E4%B8%BA%E7%9C%9F%E6%AD%A3%E7%9A%84AI-Native-Coder"><span class="nav-number">7.</span> <span class="nav-text">第四阶段：把AI使用内化为本能，成为真正的AI Native Coder</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%AA%E6%9D%A5%E5%80%BC%E5%BE%97%E6%8E%A2%E7%B4%A2%E7%9A%84%E6%96%B9%E5%90%91"><span class="nav-number">7.1.</span> <span class="nav-text">未来值得探索的方向</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">8.</span> <span class="nav-text">总结</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="DCH"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">DCH</p>
+  <div class="site-description" itemprop="description">专注于iOS、RN、大前端和AI Agent技术</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">4</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">18</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/DCHEric" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;DCHEric" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://x.com/DCHtigerr" title="X → https:&#x2F;&#x2F;x.com&#x2F;DCHtigerr" rel="noopener me" target="_blank"><i class="fab fa-x-twitter fa-fw"></i>X</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+        <div class="back-to-top animated" role="button" aria-label="返回顶部">
+          <i class="fa fa-arrow-up"></i>
+          <span>0%</span>
+        </div>
+    </div>
+
+    
+    <div class="sidebar-inner sidebar-blogroll">
+      <div class="links-of-blogroll animated">
+        <div class="links-of-blogroll-title"><i class="fa fa-bars fa-fw"></i>
+          链接
+        </div>
+        <ul class="links-of-blogroll-list">
+            <li class="links-of-blogroll-item">
+              <a href="/" title="&#x2F;">首页</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/about/" title="&#x2F;about&#x2F;">关于</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/tags/" title="&#x2F;tags&#x2F;">标签</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/categories/" title="&#x2F;categories&#x2F;">分类</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/archives/" title="&#x2F;archives&#x2F;">归档</a>
+            </li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="DCH">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="DCH's Blog">
+      <meta itemprop="description" content="专注于iOS、RN、大前端和AI Agent技术">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Harness Engineering：AI Coding 时代如何做 AI Native Coder | DCH's Blog">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Harness Engineering：AI Coding 时代如何做 AI Native Coder
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+      
+
+      <time title="创建时间：2026-03-31 17:30:00 / 修改时间：17:25:37" itemprop="dateCreated datePublished" datetime="2026-03-31T17:30:00+08:00">2026-03-31</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E5%BC%80%E5%8F%91/" itemprop="url" rel="index"><span itemprop="name">AI开发</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><h2 id="Harness-Engineering：说白了就是给AI搭个环境"><a href="#Harness-Engineering：说白了就是给AI搭个环境" class="headerlink" title="Harness Engineering：说白了就是给AI搭个环境"></a>Harness Engineering：说白了就是给AI搭个环境</h2><p>同样用 Claude 或 GPT，有人让 AI 写了几行代码就卡住了，有人却让 AI 连续工作 6 个小时，交付了一个完整的游戏。</p>
+<p>一个极端的案例来自 OpenAI。3 名工程师，五个月，一行代码都没手写，指挥 Codex Agent 写了 100 万行代码，做出了一个真实的产品。有内测用户在用，有 bug 要修，有功能要加。整个开发流程跑通了。</p>
+<p>差距在哪？2026 年初，OpenAI 和 Anthropic 几乎同时给出了答案：<strong>Harness Engineering</strong>。</p>
+<p>这个词最近特别火。说白了就是给 AI 搭环境。有人把 AI 当聊天工具，有人把 AI 当长期合作的团队。区别就在这个”环境”上。</p>
+<span id="more"></span>
+
+<h2 id="相关资源"><a href="#相关资源" class="headerlink" title="相关资源"></a>相关资源</h2><ul>
+<li>OpenAI: <a target="_blank" rel="noopener" href="https://openai.com/zh-Hans-CN/index/harness-engineering/">Harness engineering: leveraging Codex in an agent-first world</a></li>
+<li>Anthropic: <a target="_blank" rel="noopener" href="https://www.anthropic.com/research/harness-design">Harness design for long-running application development</a></li>
+</ul>
+<h2 id="Agent-Model-Harness"><a href="#Agent-Model-Harness" class="headerlink" title="Agent &#x3D; Model + Harness"></a>Agent &#x3D; Model + Harness</h2><p>22年年底，ChatGPT横空出世，一个字一个字地流式回答用户问题，展示了AI工具的魅力时刻。</p>
+<p>随后，围绕如何最大化发挥ChatGPT这类AI工具的能力，业内开始研究Prompt Engineering、Context Engineering、Harness Engineering（近期），并做出一批又一批容易上手使用的AI产品。</p>
+<p>这些产品使用体验太新颖太人性化了，以至于我们在使用过程中，很少想到问自己：</p>
+<ul>
+<li>我会用这个AI工具吗？</li>
+<li>我会写提问词（Ai工具的输入）吗？</li>
+<li>我有意识主动提供足够的上下文（完成这次任务所需的信息）吗？</li>
+</ul>
+<p>很多时候，一旦体验不好，我们作为用户第一反应往往是：产品不行、引导太差、功能不够强。</p>
+<p>因为AI工具实在是太容易上手且太好用了，我们误以为使用AI并不是一项需要学习的能力。</p>
+<p>事实上，<strong>会使用和用的好是两码事，想把AI用好也是需要持续学习的</strong>。</p>
+<p>能不能意识到这一点，决定了我们能不能随着AI进步而进步，成为AI时代的Native。</p>
+<h2 id="第一阶段：从传统编程到Vibe-Coding"><a href="#第一阶段：从传统编程到Vibe-Coding" class="headerlink" title="第一阶段：从传统编程到Vibe Coding"></a>第一阶段：从传统编程到Vibe Coding</h2><p>在软件开发的历史进程中，每一次效率的飞跃都伴随着抽象层次的提升。</p>
+<p>从机器码到汇编语言到高级语言，从CLI到IDE到AI聊天框，开发者们始终在寻求降本增效的开发方法。</p>
+<p>最早是Cursor改变了大家对编程软件只能编程的刻板印象。其对用户友好的可视化界面，让开发者可以很丝滑地和AI结对编程，进行理论上高效高频的协作。</p>
+<p>大家惊奇地发现：</p>
+<ul>
+<li>原来随手几句话就能生成一个闭环的可运行模块；</li>
+<li>原来随便写点prompt就能得到测试用例、精美UI。</li>
+</ul>
+<p>于是vibe coding应运而生：</p>
+<p><strong>你只需要告诉AI你的想法，不断反馈你的感觉，AI迅速帮你实现。</strong></p>
+<p>它把原来传统的纯人工开发，变成了与模型的即时对话，让开发者快速拿到反馈，非常适合做原型来验证想法。</p>
+<h3 id="Vibe-Coding-学习资源"><a href="#Vibe-Coding-学习资源" class="headerlink" title="Vibe Coding 学习资源"></a>Vibe Coding 学习资源</h3><p>想学习Vibe Coding可以参考以下内容（可以收藏）：</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://cursor.com/cn/blog/scaling-agents">Cursor团队AI Coding经验</a></li>
+<li><a target="_blank" rel="noopener" href="https://mp.weixin.qq.com/s/y92swgU8FnbdyhEpY1xD-A">Claude Code团队AI Coding经验</a></li>
+<li><a target="_blank" rel="noopener" href="https://mp.weixin.qq.com/s/_3EFVhVwAKXjatG7e7mOpg">Claude Code实战编程经验</a></li>
+<li><a target="_blank" rel="noopener" href="https://openai.com/zh-Hans-CN/index/harness-engineering/">Codex团队AI Coding经验</a></li>
+<li><a target="_blank" rel="noopener" href="https://github.com/datawhalechina/easy-vibe">Datawhale团队Vibe Coding教程</a></li>
+</ul>
+<h3 id="Vibe-Coding-的局限性"><a href="#Vibe-Coding-的局限性" class="headerlink" title="Vibe Coding 的局限性"></a>Vibe Coding 的局限性</h3><p>初期，大家以为Vibe Coding的瓶颈似乎只在人工QA频率。</p>
+<p>只要一直坐在屏幕前问AI、催 AI，它就能像ChatGPT回答问题一样，帮你搞定一切。</p>
+<p>但当要求从能展示的 Demo提升到可上线的工程项目，从个人编程走向团队协作时，Vibe Coding暴露出很多缺陷：</p>
+<ol>
+<li><p><strong>语义漂移与不确定性</strong>：模型在理解模糊需求时会做大量假设，输出结构与团队意图常常不一致，无法保证边界条件与错误处理都被覆盖。</p>
+</li>
+<li><p><strong>不可解释&#x2F;可审计性差</strong>：vibe输出往往是黑盒式的代码片段，缺少来源说明、设计决策与验收标准，团队难以审计、点对点找相关负责人维护。</p>
+</li>
+<li><p><strong>知识固化风险</strong>：当代码和设计未同步成可机器理解的规范时，知识留存在人脑或散落在PR中，容易随着人员变动流失。</p>
+</li>
+<li><p><strong>技术债</strong>：当你临时妥协草率完成一个需求，Agent会把这个当成good case。随着代码里这里草率处理越来越多，AI会放大这种草率，积累技术债。</p>
+</li>
+<li><p><strong>协作冲突</strong>：多人各自和AI交互生成代码，如果没有统一规则，就会导致风格、接口和测试覆盖严重碎片化。</p>
+</li>
+</ol>
+<p>这些问题随着Vibe Coding客观存在，不能指望以后模型编程能力越来越强、理解能力越来越棒，就像再强大的汽车引擎也需要认路的老师傅驾驭，才能不跑偏。</p>
+<h2 id="第二阶段：掌握让AI持续对齐的能力"><a href="#第二阶段：掌握让AI持续对齐的能力" class="headerlink" title="第二阶段：掌握让AI持续对齐的能力"></a>第二阶段：掌握让AI持续对齐的能力</h2><h3 id="1-让AI持续对齐你的意图"><a href="#1-让AI持续对齐你的意图" class="headerlink" title="1. 让AI持续对齐你的意图"></a>1. 让AI持续对齐你的意图</h3><p>AI在问答任务上已经展示了极强的能力和潜力，但在代码任务里却容易跑偏。</p>
+<p>因为问答依赖上下文的往往很短，而且用户意图明确，模型只需要围绕一个问题生成答案；</p>
+<p>但是代码任务依赖的上下文大得多，包括业务背景、历史实现、技术选型、团队规范，甚至还包括这次为什么要这么改，以后要怎么改。</p>
+<p>Ai很难通过问答的形式对齐理解这么多的意图。比如，GPT-4o等先进模型在1K Token时的准确率为99.3%，而当上下文扩展到32K Token时，准确率会暴跌至69.7%。</p>
+<p>所以AI Coding很容易出现两类典型问题：</p>
+<ul>
+<li><strong>上下文中毒</strong>：持续AI Coding时，难免混入一些无关信息，而模型无法分辨出这些，一视同仁难免跑偏；</li>
+<li><strong>注意力漂移</strong>：某次AI Coding偏离了目标，会导致后续生成结果看起来差不多合理，但积累到最后失之千里。</li>
+</ul>
+<p>因此，AI Coding 的核心问题从来不是：<strong>这部分代码怎么交给AI写的更好</strong></p>
+<p>而是：<strong>如何把聊天式、灵感式的编码过程，转换为团队可依赖、可验证、可治理的工程流程？</strong></p>
+<h3 id="2-让AI持续对齐你的任务"><a href="#2-让AI持续对齐你的任务" class="headerlink" title="2. 让AI持续对齐你的任务"></a>2. 让AI持续对齐你的任务</h3><p>很多人使用AI Coding的工作流是：收到需求→打开AI对话框→直接让AI写代码</p>
+<p>这种方式把需求分析、方案设计、代码实现和验收判断都压缩进了同一个对话过程。AI一边理解你的意图，一边生成方案，一边完成实现，一边再为自己的结果找理由，最后很容易在多轮对话中逐渐偏离目标。</p>
+<p>为了减少这种偏差，我们需要将理解任务与生成代码显式地解耦。</p>
+<p><strong>稳定 AI Coding 的本质是从对话对齐转向文件对齐</strong>。通过引入文件（如design.md），我们将原本碎片化的聊天记录，转化为一份透明、可修订、易协作的文档。</p>
+<h3 id="3-基于文件的AI-Coding方案"><a href="#3-基于文件的AI-Coding方案" class="headerlink" title="3. 基于文件的AI Coding方案"></a>3. 基于文件的AI Coding方案</h3><ol>
+<li><strong>基于任务上下文和AI对话</strong>：通过初始对话让AI快速理解原始需求。</li>
+<li><strong>生成设计文档</strong>：不急于写代码，先要求AI输出设计方案，由你确认架构是否正确。</li>
+<li><strong>按文档AI Coding MVP</strong>：AI严格基于文档内容进行开发，确保每一步都有据可依。</li>
+<li><strong>Review &amp; Update</strong>：实现后回看文档。如果代码偏离了设计，或者设计需要调整，先更新文档，再进入下一轮。</li>
+</ol>
+<p>这个闭环的目标是：<strong>AI Coding个人任务，确保可靠交付</strong>。</p>
+<p>但如果我们希望这种能力不只停留在个人习惯层面，而是进一步沉淀为团队可复用、可验证、可维护的工程资产，仅靠几个文件远远不够。因为随着项目推进，文档不只是写给AI看的指令，还是团队共享的事实来源，持续驱动整个工程的协作开发。</p>
+<p>我们需要将基于文件的个人级别对齐转变为基于规范的工程级别对齐。接下来，讨论如何通过SDD（Specification-Driven Development，规范驱动）Coding来实现这一工程化转变。</p>
+<h2 id="第三阶段：从个人提效到团队协作的SDD-Coding"><a href="#第三阶段：从个人提效到团队协作的SDD-Coding" class="headerlink" title="第三阶段：从个人提效到团队协作的SDD Coding"></a>第三阶段：从个人提效到团队协作的SDD Coding</h2><h3 id="1-软件开发协作范式演变"><a href="#1-软件开发协作范式演变" class="headerlink" title="1. 软件开发协作范式演变"></a>1. 软件开发协作范式演变</h3><p><strong>Talk is cheap，show me your code &#x2F; prompt &#x2F; skill &#x2F; specification</strong></p>
+<p>这句话最早的版本是Linux社区里那句很有名的：Talk is cheap, show me your code. 它背后代表了一种很朴素的工程观：在软件开发里，真正能让团队对齐的，从来不是空泛讨论，而是可以被检查、被复现、被协作的具体载体。</p>
+<p>在传统开发时代，这个载体是<strong>code</strong>。 你说再多，不如把代码写出来、把接口跑起来、把测试补完整。团队成员之间很多共识，最终都是靠代码来确认的。</p>
+<p>但AI Coding时代，当写代码这件事开始部分交给模型完成时，团队协作的重点从你亲手写了什么代码，转变为你是如何引导模型写出这些代码的。于是出现了新的协作载体：</p>
+<ul>
+<li>最开始是<strong>prompt</strong>：你怎么提问、怎么拆任务、怎么描述约束，开始影响结果质量；</li>
+<li>再往后是<strong>skill</strong>：团队把一些重复有效的经验沉淀成可复用的能力模块，让 AI 在不同任务中复用相同的方法；</li>
+<li>再进一步，当项目需要团队协作来长期维护、工程落地时，prompt和skill有点不够用了，因为它们更偏生成过程的技巧，而不是团队共享的事实来源。因此协作载体落到<strong>specification</strong>上。它不只是告诉 AI 该怎么做，更在规范定义开发应该做到什么程度、如何判断做对了没有、如何团队协作。</li>
+</ul>
+<p>从这个角度看，软件开发里的协作介质，其实一直在升级：</p>
+<p><strong>从 talk 到 code，从 code 到 prompt，从 prompt 到 skill，再从 skill 走向 specification。</strong></p>
+<p>这并不是说前面的东西不重要了，而是说当工程复杂度不断上升时，团队需要一个更稳定、更明确、更可验证的中间层，来承接人与人、人与 AI、以及 AI 与代码之间的协作关系。这也是为什么，在AI Coding继续发展的今天，越来越多人开始关注SDD Coding。</p>
+<h3 id="2-什么是SDD-Coding"><a href="#2-什么是SDD-Coding" class="headerlink" title="2. 什么是SDD Coding"></a>2. 什么是SDD Coding</h3><p><strong>SDD Coding（Specification-Driven Development Coding，规范驱动开发）</strong> 是一种方法论：用形式化、详尽、可验证的规范作为可执行蓝图，驱动 AI 进行代码生成。规范不再只是辅助说明，而是事实来源，用来指导后续的生成、校验与维护；你负责编写清晰的需求与约束，AI 负责基于规范实现代码。</p>
+<p>传统开发通常是开发者写需求 + 写代码，流程是：</p>
+<p><strong>需求 → 设计 → 手写代码 → 测试</strong></p>
+<p>而规范驱动开发则进一步变成：</p>
+<p><strong>需求 → 详细规范 → AI 生成 → 验证</strong></p>
+<p>两者最关键的差异在于：前者是先有实现，再不断补充理解；后者则是先把理解尽可能沉淀为规范，再让 AI 基于规范实现。</p>
+<p>也就是说，代码不再是唯一的核心产物，规范开始前置，成为整个开发流程中的事实来源。</p>
+<p>这意味着，开发者的重心也会发生转移：</p>
+<ul>
+<li>不再把主要精力放在亲手写出每一行代码上，而是更多放在架构设计、需求澄清、边界定义和结果验证上；</li>
+<li>不再主要依赖个人经验确保代码质量，而是通过系统化的规则、验收条件和反馈闭环。</li>
+</ul>
+<p>SDD Coding并不是要求开发者写更多的文档，而是把原本散落在聊天记录、个人经验和代码历史里的隐性知识，提前沉淀成可执行、可验证、可复用的规范。</p>
+<p>它的核心不只是先写规范给 AI 看，还需要用规范验证结果，并把新发现的问题继续回写到规范里。</p>
+<h3 id="SDD-Coding-核心流程"><a href="#SDD-Coding-核心流程" class="headerlink" title="SDD Coding 核心流程"></a>SDD Coding 核心流程</h3><p>一个最小可执行的 SDD Coding 流程，通常可以概括为四步：</p>
+<ol>
+<li><p><strong>清晰需求，写明规范</strong>：在实现前，先产出结构化的specification。明确解决的问题、输入输出、边界条件及验收标准，将模糊需求转化为人机共识的唯一事实来源。</p>
+</li>
+<li><p><strong>依据规范，精准生成</strong>：让 AI 严格基于规范生成代码与测试。AI不是在自由发挥，而是作为执行者，交付规范要求的代码。</p>
+</li>
+<li><p><strong>对齐规范，严格验证</strong>：验证重点从能否运行转向是否达标。对照规范检查 I&#x2F;O、边界覆盖及设计意图，让规范充当裁判角色。</p>
+</li>
+<li><p><strong>回写规范，沉淀资产</strong>：将实现中暴露的遗漏、误解或新约束补回specification。不只是修代码，而是通过更新系统事实，避免重复犯错。</p>
+</li>
+</ol>
+<p>这套流程真正改变的，不只是 AI 写代码的方式，而是团队理解需求、协作开发和积累工程知识的方式。</p>
+<h3 id="3-规范是AI-Coding时代的团队资产"><a href="#3-规范是AI-Coding时代的团队资产" class="headerlink" title="3. 规范是AI Coding时代的团队资产"></a>3. 规范是AI Coding时代的团队资产</h3><p>前面的SDD Coding解决的是如何让 AI 基于规范稳定生成代码，那么这些规范，最后会沉淀成什么？</p>
+<p>答案：<strong>它们会逐渐沉淀成一种新的团队资产</strong>。</p>
+<p>这里先简单介绍一个很常见的技术栈：<strong>RAG（Retrieval-Augmented Generation，检索增强生成）</strong>。核心思想是不把所有知识都硬塞进模型参数里，而是在模型生成之前，先从外部知识库中检索出和当前任务最相关的信息，再把这些信息作为上下文提供给模型。</p>
+<p>这样AI Coding的效果不再只取决于模型本身，还会越来越取决于团队沉淀了什么，以及这些沉淀下来的内容能不能被复用。所以规范本身就是一种非常适合同步的团队资产。</p>
+<p>因为一份高质量的 specification，往往同时包含了：</p>
+<ul>
+<li>需求背景</li>
+<li>设计意图</li>
+<li>接口约束</li>
+<li>边界条件</li>
+<li>验收标准</li>
+</ul>
+<p>这些内容，恰恰就是 AI 在写代码、补测试、改实现、做审查时最需要、也最容易缺失的高价值上下文。</p>
+<h4 id="三类团队知识资产"><a href="#三类团队知识资产" class="headerlink" title="三类团队知识资产"></a>三类团队知识资产</h4><p>在这个理念下，规范并不是唯一的团队资产。随着AI Coding 逐步落地，团队通常会形成三类互相配合的知识资产：</p>
+<ol>
+<li><p><strong>Specification（定义做什么）</strong>：它是整个流程的事实来源。负责沉淀需求约束、边界与验收标准，定义什么才算做对了。</p>
+</li>
+<li><p><strong>Skill（沉淀怎么做）</strong>：它是团队高频经验的封装。负责固化代码风格、设计习惯与安全规范，让 AI 像老员工一样干活，熟能生巧。</p>
+</li>
+<li><p><strong>MCP &#x2F; 知识库（提供做过什么）</strong>：它是团队的外部记忆。通过连接历史代码、文档与避坑指南，让 AI 能在组织经验中寻找最优解。</p>
+</li>
+</ol>
+<p>三者结合，AI 才真正有机会从一次性的生成工具，进化为团队长期可依赖的工程伙伴。所以AI Coding的真正目标，不是让开发者今天多写 500 行代码，而是让团队在每一次项目迭代中，把经验持续沉淀下来，变成未来可以反复调用的组织能力。</p>
+<p>这才是AI Coding真正从原型工具走向生产工具的关键。</p>
+<h3 id="4-SDD-Coding实战经验"><a href="#4-SDD-Coding实战经验" class="headerlink" title="4. SDD Coding实战经验"></a>4. SDD Coding实战经验</h3><p>使用基于Vibe、document的AI Coding，只要稍微注意上下文和任务拆分，就已经能明显提升效果。</p>
+<p>但要把SDD Coding这项利器引入现有工作流，需要先判断一件事：<strong>它的前期成本，对当前团队来说是否可接受</strong>。</p>
+<p>这一步很重要。因为SDD Coding的价值主要体现在中长期的工程。</p>
+<ul>
+<li>如果团队当前还停留在快速试错、单人原型阶段，那么完全不需要一上来就做的很规范；</li>
+<li>但如果项目已经开始进入多人协作、反复迭代和长期维护，是否引入SDD Coding，就值得认真评估了。</li>
+</ul>
+<p>在这个过程中，团队通常会有三个最常见的顾虑。</p>
+<h4 id="顾虑一：先写规范，会不会拖慢开发速度？"><a href="#顾虑一：先写规范，会不会拖慢开发速度？" class="headerlink" title="顾虑一：先写规范，会不会拖慢开发速度？"></a>顾虑一：先写规范，会不会拖慢开发速度？</h4><p>这是一个典型的<strong>以短期投入换取长期回报是否值得</strong>的问题。</p>
+<p>如果把 SDD 理解成先补很多文档，它会带来很多额外的工作了；但如果借助AI工具把规范生成、规范回写和规范同步尽可能自动化。这样前期增加的额外工作，本质上是在做更清晰的建模，后续则由工具和流程帮助团队维持一致性。</p>
+<p>而很多团队是愿意在研发前期多付出一点整理和建模成本，避免在上线后承担更高昂的返工、维护和沟通代价。</p>
+<p>从这个角度看，SDD 并不是额外增加了一层工作，而是在把原本分散在沟通、调试、返工和补救里的隐性成本提前显性化。</p>
+<h4 id="顾虑二：如果AI误解了规范怎么办？"><a href="#顾虑二：如果AI误解了规范怎么办？" class="headerlink" title="顾虑二：如果AI误解了规范怎么办？"></a>顾虑二：如果AI误解了规范怎么办？</h4><p>这恰恰是SDD Coding要解决的问题。SDD Coding不是把理解需求完全交给AI，而是尽可能把理解结果沉淀成可校验的规范，例如明确的验收标准、输入输出示例、边界条件和测试用例。AI误解自然语言很正常，但只要规范本身足够结构化，生成结果就仍然可以继续被人工验证和约束。</p>
+<p>SDD Coding的核心不是假设AI永远理解正确，而是通过AI减小偏差，这肯定比只靠Vibe Coding更稳定，也更适合团队协作。</p>
+<h4 id="顾虑三：如何选取规范模版并形成自己团队的规范？"><a href="#顾虑三：如何选取规范模版并形成自己团队的规范？" class="headerlink" title="顾虑三：如何选取规范模版并形成自己团队的规范？"></a>顾虑三：如何选取规范模版并形成自己团队的规范？</h4><p>规范到底该怎么写？模板从哪里来？这也是 SDD 落地里一个很现实的门槛。 因为大多数团队并不缺写规范的能力，缺的是一套既不复杂、又能驱动实现并且适合自己项目的规范模板。</p>
+<p>与其从零开始造一套规范体系，不如先借助现成的开源框架，快速迭代然后再根据自己项目来优化：</p>
+<ol>
+<li><p><strong>OpenSpec</strong>（<a target="_blank" rel="noopener" href="https://github.com/Fission-AI/OpenSpec%EF%BC%89%EF%BC%9AFission">https://github.com/Fission-AI/OpenSpec）：Fission</a> AI推出的轻量级SDD工具。通过一组斜杠命令驱动规范 → 实现的过程，用openspec&#x2F;specs&#x2F;与openspec&#x2F;changes&#x2F;两个区域分别管理系统规范和变更记录。每个阶段都需要手动触发，整体控制感比较强，比较适合还在摸索SDD Coding的团队。</p>
+</li>
+<li><p><strong>Spec-kit</strong>（<a target="_blank" rel="noopener" href="https://github.com/github/spec-kit%EF%BC%89%EF%BC%9AGitHub%E6%8E%A8%E5%87%BA%E7%9A%84SDD%E5%B7%A5%E5%85%B7%E5%A5%97%E4%BB%B6%E3%80%82%E9%80%9A%E8%BF%87%E5%9C%A8constitution.md%E4%B8%AD%E5%AE%9A%E4%B9%89%E4%B8%8D%E5%8F%AF%E8%BD%BB%E6%98%93%E8%BF%9D%E8%83%8C%E7%9A%84%E6%9E%B6%E6%9E%84%E5%8E%9F%E5%88%99%EF%BC%8C%E7%94%A8%E6%9D%A5%E7%BA%A6%E6%9D%9F%E5%90%8E%E7%BB%AD%E6%89%80%E6%9C%89%E8%A7%84%E5%88%92%E5%92%8C%E5%AE%9E%E7%8E%B0%E8%BF%87%E7%A8%8B%E4%B8%AD%E7%9A%84%E6%8A%80%E6%9C%AF%E5%86%B3%E7%AD%96%E3%80%82%E5%AE%83%E7%9A%84%E6%AF%8F%E4%B8%AA%E9%98%B6%E6%AE%B5%E4%B9%9F%E5%9D%87%E9%9C%80%E6%89%8B%E5%8A%A8%E8%A7%A6%E5%8F%91%EF%BC%8C%E8%BF%98%E5%9C%A8%E4%BB%A3%E7%A0%81%E7%94%9F%E6%88%90%E5%89%8D%E8%AE%BE%E6%9C%89%E9%A2%84%E5%AE%9E%E7%8E%B0%E9%97%A8%E7%A6%81%E7%A1%AE%E4%BF%9D%E8%B4%A8%E9%87%8F%EF%BC%8C%E9%80%82%E5%90%88%E5%AF%B9%E6%9E%B6%E6%9E%84%E6%9C%89%E4%B8%A5%E6%A0%BC%E7%BA%A6%E6%9D%9F%E7%9A%84%E9%A1%B9%E7%9B%AE%E3%80%82">https://github.com/github/spec-kit）：GitHub推出的SDD工具套件。通过在constitution.md中定义不可轻易违背的架构原则，用来约束后续所有规划和实现过程中的技术决策。它的每个阶段也均需手动触发，还在代码生成前设有预实现门禁确保质量，适合对架构有严格约束的项目。</a></p>
+</li>
+<li><p><strong>Superpowers</strong>（<a target="_blank" rel="noopener" href="https://github.com/obra/superpowers%EF%BC%89%EF%BC%9A%E4%B8%80%E4%B8%AA%E5%BC%80%E6%BA%90%E7%9A%84AI%E5%B7%A5%E7%A8%8B%E5%8C%96%E6%8A%80%E8%83%BD%E6%A1%86%E6%9E%B6%E3%80%82%E5%AE%83%E6%8A%8ASDD">https://github.com/obra/superpowers）：一个开源的AI工程化技能框架。它把SDD</a> Coding从手动执行流程推进到流程内嵌进代理行为，只要有一定概率某个技能适用，智能体就会自动触发相应能力。</p>
+</li>
+</ol>
+<h2 id="第四阶段：把AI使用内化为本能，成为真正的AI-Native-Coder"><a href="#第四阶段：把AI使用内化为本能，成为真正的AI-Native-Coder" class="headerlink" title="第四阶段：把AI使用内化为本能，成为真正的AI Native Coder"></a>第四阶段：把AI使用内化为本能，成为真正的AI Native Coder</h2><p>现在这句话应该没有争议：<strong>AI是时代洪流，而AI Coding是其中最先落地、最影响工作范式的场景</strong>。</p>
+<p>程序员编程创建了AI，AI也重塑了程序员的编程范式。</p>
+<p>AI Coding 时代的 AI Native Coder，不只会用最贵的模型，最潮流的工具，是既享受AI驱动带来的速度，也不放弃工程化所需要的规范。只有这样，AI才能和你发挥出结对编程的效果。</p>
+<p>对个人开发者来说，这意味着你需要重新学习如何与AI协作编程；</p>
+<p>对团队来说，这意味着要重新思考如何把AI集成到已有的开发流程中。</p>
+<p><strong>谁更早完成这种转变，谁就更有可能在下一阶段的软件开发市场里占据优势</strong>。</p>
+<h3 id="未来值得探索的方向"><a href="#未来值得探索的方向" class="headerlink" title="未来值得探索的方向"></a>未来值得探索的方向</h3><p>我个人认为，还有几个方向值得探索：</p>
+<p><strong>1. AI能否在更长时间尺度上自驱动完成工程任务</strong></p>
+<p>现在大多数AI Coding，仍然是人类高频盯控、持续纠偏的短程任务模式。当我们给出足够清晰的需求+规范后，系统能否在非人类工作时间连续运行，自主完成任务拆解、沙盒编译、跑测试用例、查阅日志并自我纠错？这种异步结对编程的实现，才是真正意义上的人力解放。</p>
+<p><strong>2. AI提效能否从编程扩展到其他场景</strong></p>
+<p>AI Coding 只是开始。类似的工作范式，是否也适用于自媒体个人IP运营、个人终身学习管理，甚至人生规划，本质上相同且都值得探索。如果这些领域也能逐渐形成自己的规范—生成—验证—迭代闭环，那么AI Native就不只是程序员内部的自嗨，会引发更广泛的工作方式变革。</p>
+<p><strong>3. 工程经验能否插件化</strong></p>
+<p>真正有价值的不是Prompt写得多好，而是如何沉淀高信噪比的知识。那些被验证过的 Specification、Skill 和架构约束，如何逐渐演变成可插拔、可复用的插件。当这些沉淀下来的规范资产足够多时，甚至可以作为数字员工，自主完成相应任务。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p><strong>最后回答这篇文章的标题：AI Coding 时代如何做 AI Native Coder？</strong></p>
+<p>我的答案是：<strong>将AI嵌入自己的工作流，并把相关用法内化为本能</strong>。</p>
+<p>个人认为，这不仅仅是学习如何熟练使用AI工具，更是重塑工程师的角色。未来手写代码编程的性价比越来越低，而与AI结对编程的性价比会越来越高，也许这是我们应该重视学习的新的编程范式。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>DCH
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/" title="Harness Engineering：AI Coding 时代如何做 AI Native Coder">https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/AI-Coding/" rel="tag"><i class="fa fa-tag"></i> AI Coding</a>
+              <a href="/tags/Harness-Engineering/" rel="tag"><i class="fa fa-tag"></i> Harness Engineering</a>
+              <a href="/tags/SDD/" rel="tag"><i class="fa fa-tag"></i> SDD</a>
+              <a href="/tags/%E5%BC%80%E5%8F%91%E6%96%B9%E6%B3%95%E8%AE%BA/" rel="tag"><i class="fa fa-tag"></i> 开发方法论</a>
+              <a href="/tags/%E8%BD%AF%E4%BB%B6%E5%B7%A5%E7%A8%8B/" rel="tag"><i class="fa fa-tag"></i> 软件工程</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/31/ios-binary-reorder-optimization/" rel="prev" title="iOS二进制重排冷启动优化：原理、实操与反思">
+                  <i class="fa fa-angle-left"></i> iOS二进制重排冷启动优化：原理、实操与反思
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    <div class="comments utterances-container"></div>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">DCH</span>
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+<script class="next-config" data-name="utterances" type="application/json">{"enable":true,"repo":"DCHEric/DCHEric.github.io","issue_term":"pathname","theme":"preferred-color-scheme","label":"comment"}</script>
+<script src="/js/third-party/comments/utterances.js" defer></script>
+<script src="/js/darkmode-toggle.js"></script>
+
+</body>
+</html>
