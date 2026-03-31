@@ -1,6 +1,76 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>从Runtime到Runloop</title>
+    <url>/2026/03/30/from_runtime_tor_runloop/</url>
+    <content><![CDATA[<h1 id="从Runtime到Runloop"><a href="#从Runtime到Runloop" class="headerlink" title="从Runtime到Runloop"></a>从Runtime到Runloop</h1><p>iOS 程序的执行顺序分两个层面：启动过程和运行时的生命周期。</p>
+<span id="more"></span>
+
+<p><img data-src="/images/from_runtime_to_runloop.jpeg" alt="iOS程序执行流程"></p>
+<p>① 内核 &amp; dyld 阶段<br>用户点击 App 图标后，系统做的第一件事不是执行你写的代码，而是：<br>内核把 Mach-O 格式的可执行文件映射进内存，然后交给 dyld（动态链接器）。dyld 负责把 UIKit、Foundation、你引入的第三方库等所有动态库加载进来，解析符号，把函数地址都对号入座。<br>之后 Objective-C Runtime 初始化，执行所有类的 +load 方法。这是整个 App 里最早被执行的自定义代码，很多黑魔法（Method Swizzling）就藏在这里。</p>
+<p>② main() 函数<br>这是能看到的起点，但其实也就两行核心代码：</p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Swift 项目里用 @main 替代，本质一样</span></span><br><span class="line"><span class="type">UIApplicationMain</span>(argc, argv, <span class="literal">nil</span>, <span class="type">NSStringFromClass</span>(<span class="type">AppDelegate</span>.<span class="keyword">self</span>))</span><br></pre></td></tr></table></figure>
+
+<p>UIApplicationMain 做了三件事：创建 UIApplication 单例、创建 AppDelegate 实例、启动主线程的 RunLoop（这个函数永远不会返回）。</p>
+<p>③ AppDelegate 回调</p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">application</span>(<span class="keyword">_</span> <span class="params">application</span>: <span class="type">UIApplication</span>,</span><br><span class="line">                 <span class="params">didFinishLaunchingWithOptions</span> <span class="params">launchOptions</span>: [<span class="type">UIApplication</span>.<span class="params">LaunchOptionsKey</span>: <span class="keyword">Any</span>]<span class="operator">?</span>) -&gt; <span class="type">Bool</span> &#123;</span><br><span class="line">    <span class="comment">// 在这里做：SDK 初始化、推送注册、根视图设置</span></span><br><span class="line">    <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这是真正干活的第一个入口。返回 false 会让系统认为启动失败。<br>iOS 13 之后引入了 SceneDelegate，多窗口相关的逻辑（比如 iPad 分屏）从 AppDelegate 拆了出来，窗口和根 ViewController 的设置移到 scene(_:willConnectTo:) 里做。</p>
+<p>④ ViewController 生命周期<br>这是日常开发接触最多的部分，几个关键方法的调用时机：</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>调用时机</th>
+<th>适合做什么</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>loadView</td>
+<td>视图还不存在时</td>
+<td>自定义根 view（少用）</td>
+</tr>
+<tr>
+<td>viewDidLoad</td>
+<td>视图加载完，只调一次</td>
+<td>UI 初始化、绑定数据</td>
+</tr>
+<tr>
+<td>viewWillAppear</td>
+<td>每次显示前</td>
+<td>刷新数据、注册通知</td>
+</tr>
+<tr>
+<td>viewDidAppear</td>
+<td>每次显示后</td>
+<td>开始动画、开始录音</td>
+</tr>
+<tr>
+<td>viewWillDisappear</td>
+<td>每次消失前</td>
+<td>保存状态、取消网络请求</td>
+</tr>
+<tr>
+<td>viewDidDisappear</td>
+<td>每次消失后</td>
+<td>移除通知、暂停播放</td>
+</tr>
+</tbody></table>
+<p>⑤ RunLoop：App 真正的心跳<br>UIApplicationMain 启动之后，主线程就进入了一个 永不退出的事件循环，这就是 RunLoop。它的工作原理是：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">有事件来了？→ 处理（触摸、定时器、网络回调……）</span><br><span class="line">没事件？→ 休眠，让出 CPU</span><br></pre></td></tr></table></figure>
+
+<p>所有的用户交互、网络回调、动画帧渲染，本质上都是”往 RunLoop 里投递事件”，然后等 RunLoop 调度到你。<br>这也是为什么在主线程做耗时操作会卡 UI——RunLoop 被占着，其他事件（包括屏幕刷新）都排不上队。<br>参考资料<br><a href="https://mp.weixin.qq.com/s/hTyudBBgFyq8Y3apr9xBTQ">iOS之Runloop</a></p>
+]]></content>
+      <categories>
+        <category>iOS</category>
+      </categories>
+      <tags>
+        <tag>Runtime</tag>
+        <tag>Runloop</tag>
+        <tag>iOS开发</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>Harness Engineering：AI Coding 时代如何做 AI Native Coder</title>
     <url>/2026/03/31/harness-engineering-ai-native-coder/</url>
     <content><![CDATA[<h2 id="Harness-Engineering：说白了就是给AI搭个环境"><a href="#Harness-Engineering：说白了就是给AI搭个环境" class="headerlink" title="Harness Engineering：说白了就是给AI搭个环境"></a>Harness Engineering：说白了就是给AI搭个环境</h2><p>同样用 Claude 或 GPT，有人让 AI 写了几行代码就卡住了，有人却让 AI 连续工作 6 个小时，交付了一个完整的游戏。</p>
@@ -197,76 +267,6 @@
         <tag>SDD</tag>
         <tag>开发方法论</tag>
         <tag>软件工程</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>从Runtime到Runloop</title>
-    <url>/2026/03/30/from_runtime_tor_runloop/</url>
-    <content><![CDATA[<h1 id="从Runtime到Runloop"><a href="#从Runtime到Runloop" class="headerlink" title="从Runtime到Runloop"></a>从Runtime到Runloop</h1><p>iOS 程序的执行顺序分两个层面：启动过程和运行时的生命周期。</p>
-<span id="more"></span>
-
-<p><img data-src="/images/from_runtime_to_runloop.jpeg" alt="iOS程序执行流程"></p>
-<p>① 内核 &amp; dyld 阶段<br>用户点击 App 图标后，系统做的第一件事不是执行你写的代码，而是：<br>内核把 Mach-O 格式的可执行文件映射进内存，然后交给 dyld（动态链接器）。dyld 负责把 UIKit、Foundation、你引入的第三方库等所有动态库加载进来，解析符号，把函数地址都对号入座。<br>之后 Objective-C Runtime 初始化，执行所有类的 +load 方法。这是整个 App 里最早被执行的自定义代码，很多黑魔法（Method Swizzling）就藏在这里。</p>
-<p>② main() 函数<br>这是能看到的起点，但其实也就两行核心代码：</p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Swift 项目里用 @main 替代，本质一样</span></span><br><span class="line"><span class="type">UIApplicationMain</span>(argc, argv, <span class="literal">nil</span>, <span class="type">NSStringFromClass</span>(<span class="type">AppDelegate</span>.<span class="keyword">self</span>))</span><br></pre></td></tr></table></figure>
-
-<p>UIApplicationMain 做了三件事：创建 UIApplication 单例、创建 AppDelegate 实例、启动主线程的 RunLoop（这个函数永远不会返回）。</p>
-<p>③ AppDelegate 回调</p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">application</span>(<span class="keyword">_</span> <span class="params">application</span>: <span class="type">UIApplication</span>,</span><br><span class="line">                 <span class="params">didFinishLaunchingWithOptions</span> <span class="params">launchOptions</span>: [<span class="type">UIApplication</span>.<span class="params">LaunchOptionsKey</span>: <span class="keyword">Any</span>]<span class="operator">?</span>) -&gt; <span class="type">Bool</span> &#123;</span><br><span class="line">    <span class="comment">// 在这里做：SDK 初始化、推送注册、根视图设置</span></span><br><span class="line">    <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>这是真正干活的第一个入口。返回 false 会让系统认为启动失败。<br>iOS 13 之后引入了 SceneDelegate，多窗口相关的逻辑（比如 iPad 分屏）从 AppDelegate 拆了出来，窗口和根 ViewController 的设置移到 scene(_:willConnectTo:) 里做。</p>
-<p>④ ViewController 生命周期<br>这是日常开发接触最多的部分，几个关键方法的调用时机：</p>
-<table>
-<thead>
-<tr>
-<th>方法</th>
-<th>调用时机</th>
-<th>适合做什么</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>loadView</td>
-<td>视图还不存在时</td>
-<td>自定义根 view（少用）</td>
-</tr>
-<tr>
-<td>viewDidLoad</td>
-<td>视图加载完，只调一次</td>
-<td>UI 初始化、绑定数据</td>
-</tr>
-<tr>
-<td>viewWillAppear</td>
-<td>每次显示前</td>
-<td>刷新数据、注册通知</td>
-</tr>
-<tr>
-<td>viewDidAppear</td>
-<td>每次显示后</td>
-<td>开始动画、开始录音</td>
-</tr>
-<tr>
-<td>viewWillDisappear</td>
-<td>每次消失前</td>
-<td>保存状态、取消网络请求</td>
-</tr>
-<tr>
-<td>viewDidDisappear</td>
-<td>每次消失后</td>
-<td>移除通知、暂停播放</td>
-</tr>
-</tbody></table>
-<p>⑤ RunLoop：App 真正的心跳<br>UIApplicationMain 启动之后，主线程就进入了一个 永不退出的事件循环，这就是 RunLoop。它的工作原理是：</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">有事件来了？→ 处理（触摸、定时器、网络回调……）</span><br><span class="line">没事件？→ 休眠，让出 CPU</span><br></pre></td></tr></table></figure>
-
-<p>所有的用户交互、网络回调、动画帧渲染，本质上都是”往 RunLoop 里投递事件”，然后等 RunLoop 调度到你。<br>这也是为什么在主线程做耗时操作会卡 UI——RunLoop 被占着，其他事件（包括屏幕刷新）都排不上队。<br>参考资料<br><a href="https://mp.weixin.qq.com/s/hTyudBBgFyq8Y3apr9xBTQ">iOS之Runloop</a></p>
-]]></content>
-      <categories>
-        <category>iOS</category>
-      </categories>
-      <tags>
-        <tag>Runtime</tag>
-        <tag>Runloop</tag>
-        <tag>iOS开发</tag>
       </tags>
   </entry>
   <entry>
