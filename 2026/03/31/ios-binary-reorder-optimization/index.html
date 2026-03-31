@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: dark)"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"dcheric.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.27.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12,"width":300},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":true,"style":"flat"},"fold":{"enable":false,"height":500},"language":true},"bookmark":{"enable":true,"color":"#222","save":"auto"},"mediumzoom":true,"lazyload":true,"pangu":false,"comments":{"style":"tabs","active":"utterances","storage":true,"lazyload":false,"nav":null,"nav_id":"comments","activeClass":"utterances"},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"path":"/search.xml","localsearch":{"enable":true,"top_n_per_article":1,"unescape":false,"preload":false,"trigger":"auto"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="深入探讨 iOS 二进制重排优化原理，从虚拟内存、Page Fault 到 Clang 插桩实战，以及为什么这项技术在现代 iOS 系统中已经过时。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="iOS二进制重排冷启动优化：原理、实操与反思">
+<meta property="og:url" content="https://dcheric.github.io/2026/03/31/ios-binary-reorder-optimization/index.html">
+<meta property="og:site_name" content="DCH&#39;s Blog">
+<meta property="og:description" content="深入探讨 iOS 二进制重排优化原理，从虚拟内存、Page Fault 到 Clang 插桩实战，以及为什么这项技术在现代 iOS 系统中已经过时。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://dcheric.github.io/images/ios-binary-reorder/launch-sop.png">
+<meta property="og:image" content="https://dcheric.github.io/images/ios-binary-reorder/page-fault-before.png">
+<meta property="og:image" content="https://dcheric.github.io/images/ios-binary-reorder/compile-sources.png">
+<meta property="og:image" content="https://dcheric.github.io/images/ios-binary-reorder/write-link-map-file.png">
+<meta property="og:image" content="https://dcheric.github.io/images/ios-binary-reorder/sections.png">
+<meta property="og:image" content="https://dcheric.github.io/images/ios-binary-reorder/config-order-file.png">
+<meta property="og:image" content="https://dcheric.github.io/images/ios-binary-reorder/sanitizer-config.png">
+<meta property="og:image" content="https://dcheric.github.io/images/ios-binary-reorder/error.png">
+<meta property="og:image" content="https://dcheric.github.io/images/ios-binary-reorder/log-output.png">
+<meta property="og:image" content="https://dcheric.github.io/images/ios-binary-reorder/page-fault-after.png">
+<meta property="article:published_time" content="2026-03-31T08:00:00.000Z">
+<meta property="article:modified_time" content="2026-03-31T09:00:02.863Z">
+<meta property="article:author" content="DCH">
+<meta property="article:tag" content="iOS">
+<meta property="article:tag" content="性能优化">
+<meta property="article:tag" content="冷启动">
+<meta property="article:tag" content="二进制重排">
+<meta property="article:tag" content="Page Fault">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://dcheric.github.io/images/ios-binary-reorder/launch-sop.png">
+
+
+<link rel="canonical" href="https://dcheric.github.io/2026/03/31/ios-binary-reorder-optimization/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://dcheric.github.io/2026/03/31/ios-binary-reorder-optimization/","path":"2026/03/31/ios-binary-reorder-optimization/","title":"iOS二进制重排冷启动优化：原理、实操与反思"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>iOS二进制重排冷启动优化：原理、实操与反思 | DCH's Blog</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/medium-zoom/1.1.0/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lozad.js/1.16.0/lozad.min.js" integrity="sha256-mOFREFhqmHeQbXpK2lp4nA3qooVgACfh88fpJftLBbc=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script><script src="/js/bookmark.js" defer></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/hexo-generator-searchdb/1.5.0/search.js" integrity="sha256-xFC6PJ82SL9b3WkGjFavNiA9gm5z6UBxWPiu4CYjptg=" crossorigin="anonymous" defer></script>
+<script src="/js/third-party/search/local-search.js" defer></script>
+
+
+  <script class="next-config" data-name="mermaid" type="application/json">{"enable":true,"theme":{"light":"default","dark":"dark"},"js":{"url":"https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.10.1/mermaid.min.js","integrity":"sha256-BmQmdWDS8X2OTbrwELWK366LV6escyWhHHe0XCTU/Hk="}}</script>
+  <script src="/js/third-party/tags/mermaid.js" defer></script>
+
+
+
+
+
+  
+
+
+
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quicklink/3.0.1/quicklink.umd.js" integrity="sha256-44BednzIpUeQJcY8qtLyarFu0UCCTbgmWOvaoehiFQQ=" crossorigin="anonymous" defer></script>
+  <script class="next-config" data-name="quicklink" type="application/json">{"enable":true,"home":true,"archive":true,"delay":true,"timeout":3000,"priority":true,"url":"https://dcheric.github.io/2026/03/31/ios-binary-reorder-optimization/"}</script>
+  <script src="/js/third-party/quicklink.js" defer></script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">DCH's Blog</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">故乡的樱花开了，该回去看看了</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+      <div class="search-header">
+        <span class="search-icon">
+          <i class="fa fa-search"></i>
+        </span>
+        <div class="search-input-container">
+          <input autocomplete="off" autocapitalize="off" maxlength="80"
+                placeholder="搜索..." spellcheck="false"
+                type="search" class="search-input">
+        </div>
+        <span class="popup-btn-close" role="button">
+          <i class="fa fa-times-circle"></i>
+        </span>
+      </div>
+      <div class="search-result-container">
+        <div class="search-result-icon">
+          <i class="fa fa-spinner fa-pulse fa-5x"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#iOS%E4%BA%8C%E8%BF%9B%E5%88%B6%E9%87%8D%E6%8E%92%E5%86%B7%E5%90%AF%E5%8A%A8%E4%BC%98%E5%8C%96"><span class="nav-number">1.</span> <span class="nav-text">iOS二进制重排冷启动优化</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E4%BA%8C%E8%BF%9B%E5%88%B6%E9%87%8D%E6%8E%92%E8%BF%87%E6%97%B6%E4%BA%86"><span class="nav-number">1.1.</span> <span class="nav-text">为什么二进制重排过时了</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-iOS-%E7%B3%BB%E7%BB%9F%E5%B1%82%E9%9D%A2%E7%9A%84%E4%BC%98%E5%8C%96"><span class="nav-number">1.1.1.</span> <span class="nav-text">1. iOS 系统层面的优化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%94%B6%E7%9B%8A%E8%B6%8A%E6%9D%A5%E8%B6%8A%E5%B0%8F"><span class="nav-number">1.1.2.</span> <span class="nav-text">2. 收益越来越小</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%BB%B4%E6%8A%A4%E6%88%90%E6%9C%AC%E9%AB%98"><span class="nav-number">1.1.3.</span> <span class="nav-text">3. 维护成本高</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E5%9C%A8%E6%9B%B4%E5%80%BC%E5%BE%97%E5%81%9A%E7%9A%84%E5%90%AF%E5%8A%A8%E4%BC%98%E5%8C%96"><span class="nav-number">1.1.4.</span> <span class="nav-text">现在更值得做的启动优化</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E4%BB%80%E4%B9%88%E6%98%AF%E4%BA%8C%E8%BF%9B%E5%88%B6%E9%87%8D%E6%8E%92"><span class="nav-number">1.2.</span> <span class="nav-text">一、什么是二进制重排</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%EF%BC%88%E4%B8%80%EF%BC%89APP%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B"><span class="nav-number">1.2.1.</span> <span class="nav-text">（一）APP启动过程</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%AF%A6%E7%BB%86%E6%B5%81%E7%A8%8B%E8%AF%B4%E6%98%8E"><span class="nav-number">1.2.1.1.</span> <span class="nav-text">详细流程说明</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%90%AF%E5%8A%A8%E6%97%B6%E9%97%B4%E5%88%92%E5%88%86"><span class="nav-number">1.2.1.2.</span> <span class="nav-text">启动时间划分</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%EF%BC%88%E4%BA%8C%EF%BC%89%E8%99%9A%E6%8B%9F%E5%86%85%E5%AD%98"><span class="nav-number">1.2.2.</span> <span class="nav-text">（二）虚拟内存</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1-%E7%A8%8B%E5%BA%8F%E4%B9%8B%E9%97%B4%E7%9B%B8%E4%BA%92%E8%B8%A9%E8%B8%8F"><span class="nav-number">1.2.2.1.</span> <span class="nav-text">1. 程序之间相互踩踏</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-%E5%86%85%E5%AD%98%E4%B8%8D%E5%A4%9F%E7%94%A8%E6%97%B6%E7%9B%B4%E6%8E%A5%E6%B2%A1%E6%B3%95%E8%BF%90%E8%A1%8C"><span class="nav-number">1.2.2.2.</span> <span class="nav-text">2. 内存不够用时直接没法运行</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-%E7%A8%8B%E5%BA%8F%E5%8A%A0%E8%BD%BD%E5%9C%B0%E5%9D%80%E5%86%B2%E7%AA%81"><span class="nav-number">1.2.2.3.</span> <span class="nav-text">3. 程序加载地址冲突</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%99%9A%E6%8B%9F%E5%86%85%E5%AD%98%E8%83%BD%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98%EF%BC%9F"><span class="nav-number">1.2.2.4.</span> <span class="nav-text">虚拟内存能解决什么问题？</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%EF%BC%88%E4%B8%89%EF%BC%89Page-Fault%E9%97%AE%E9%A2%98%E7%9A%84%E5%87%BA%E7%8E%B0"><span class="nav-number">1.2.3.</span> <span class="nav-text">（三）Page Fault问题的出现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%EF%BC%88%E5%9B%9B%EF%BC%89%E4%BA%8C%E8%BF%9B%E5%88%B6%E9%87%8D%E6%8E%92%E8%AF%A6%E8%A7%A3"><span class="nav-number">1.2.4.</span> <span class="nav-text">（四）二进制重排详解</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81Lisa%E5%86%B7%E5%90%AF%E5%8A%A8page-fault%E7%8E%B0%E7%8A%B6"><span class="nav-number">1.3.</span> <span class="nav-text">二、Lisa冷启动page fault现状</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E4%BC%98%E5%8C%96%E5%AE%9E%E6%93%8D"><span class="nav-number">1.4.</span> <span class="nav-text">三、优化实操</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%EF%BC%88%E4%B8%80%EF%BC%89%E6%9F%A5%E7%9C%8B%E4%BA%8C%E8%BF%9B%E5%88%B6%E5%8F%AF%E6%89%A7%E8%A1%8C%E6%96%87%E4%BB%B6%E4%B8%AD%E7%9A%84%E7%AC%A6%E5%8F%B7%E9%A1%BA%E5%BA%8F"><span class="nav-number">1.4.1.</span> <span class="nav-text">（一）查看二进制可执行文件中的符号顺序</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%A6%82%E4%BD%95%E6%9F%A5%E7%9C%8B%E6%95%B4%E4%B8%AA%E9%A1%B9%E7%9B%AE%E4%B8%AD%E7%9A%84%E7%AC%A6%E5%8F%B7%E9%A1%BA%E5%BA%8F%E5%91%A2%EF%BC%9F"><span class="nav-number">1.4.1.1.</span> <span class="nav-text">如何查看整个项目中的符号顺序呢？</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%EF%BC%88%E4%BA%8C%EF%BC%89LinkMap-%E6%96%87%E4%BB%B6%E9%87%8C%E6%9C%89%E4%BB%80%E4%B9%88"><span class="nav-number">1.4.2.</span> <span class="nav-text">（二）LinkMap 文件里有什么</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1-%E7%9B%AE%E6%A0%87%E6%96%87%E4%BB%B6%E5%88%97%E8%A1%A8"><span class="nav-number">1.4.2.1.</span> <span class="nav-text">1. 目标文件列表</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-%E6%AE%B5%E5%92%8C%E5%8C%BA%E5%9F%9F%E5%B8%83%E5%B1%80"><span class="nav-number">1.4.2.2.</span> <span class="nav-text">2. 段和区域布局</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-%E7%AC%A6%E5%8F%B7%E8%A1%A8%EF%BC%88%E6%9C%80%E6%9C%89%E7%94%A8%EF%BC%89"><span class="nav-number">1.4.2.3.</span> <span class="nav-text">3. 符号表（最有用）</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#LinkMap-%E6%96%87%E4%BB%B6%E7%9A%84%E4%BD%9C%E7%94%A8%EF%BC%9A"><span class="nav-number">1.4.2.4.</span> <span class="nav-text">LinkMap 文件的作用：</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%EF%BC%88%E4%B8%89%EF%BC%89%E5%A6%82%E4%BD%95%E4%BF%AE%E6%94%B9%E4%BA%8C%E8%BF%9B%E5%88%B6%E6%96%87%E4%BB%B6%E7%9A%84%E7%BC%96%E8%AF%91%E9%A1%BA%E5%BA%8F"><span class="nav-number">1.4.3.</span> <span class="nav-text">（三）如何修改二进制文件的编译顺序</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1-%E5%9C%A8%E9%A1%B9%E7%9B%AE%E6%A0%B9%E7%9B%AE%E5%BD%95%E5%88%9B%E5%BB%BAorder%E6%96%87%E4%BB%B6"><span class="nav-number">1.4.3.1.</span> <span class="nav-text">1. 在项目根目录创建order文件</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%EF%BC%88%E5%9B%9B%EF%BC%89%E5%A6%82%E4%BD%95%E6%8B%BF%E5%88%B0%E5%90%AF%E5%8A%A8%E6%97%B6%E5%88%BB%E7%9A%84%E7%AC%A6%E5%8F%B7%EF%BC%9F"><span class="nav-number">1.4.4.</span> <span class="nav-text">（四）如何拿到启动时刻的符号？</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Clang%E6%8F%92%E6%A1%A9"><span class="nav-number">1.4.4.1.</span> <span class="nav-text">Clang插桩</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#1-%E7%AC%A6%E5%8F%B7%E6%94%B6%E9%9B%86%E5%99%A8"><span class="nav-number">1.4.4.2.</span> <span class="nav-text">1. 符号收集器</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-%E7%AC%A6%E5%8F%B7%E5%AF%BC%E5%87%BA%E5%99%A8"><span class="nav-number">1.4.4.3.</span> <span class="nav-text">2. 符号导出器</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%94-%E5%AF%BC%E5%87%BAorder%E6%96%87%E4%BB%B6"><span class="nav-number">1.4.5.</span> <span class="nav-text">(五) 导出order文件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">1.5.</span> <span class="nav-text">总结</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B4%E4%BD%93%E6%B5%81%E7%A8%8B"><span class="nav-number">1.5.1.</span> <span class="nav-text">整体流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B3%A8%E6%84%8F"><span class="nav-number">1.5.2.</span> <span class="nav-text">注意</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%8D%E6%80%9D"><span class="nav-number">1.5.3.</span> <span class="nav-text">反思</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">1.6.</span> <span class="nav-text">参考资料</span></a></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="DCH"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">DCH</p>
+  <div class="site-description" itemprop="description">专注于iOS、RN、大前端和AI Agent技术</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">3</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/DCHEric" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;DCHEric" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://x.com/DCHtigerr" title="X → https:&#x2F;&#x2F;x.com&#x2F;DCHtigerr" rel="noopener me" target="_blank"><i class="fab fa-x-twitter fa-fw"></i>X</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+        <div class="back-to-top animated" role="button" aria-label="返回顶部">
+          <i class="fa fa-arrow-up"></i>
+          <span>0%</span>
+        </div>
+    </div>
+
+    
+    <div class="sidebar-inner sidebar-blogroll">
+      <div class="links-of-blogroll animated">
+        <div class="links-of-blogroll-title"><i class="fa fa-bars fa-fw"></i>
+          链接
+        </div>
+        <ul class="links-of-blogroll-list">
+            <li class="links-of-blogroll-item">
+              <a href="/" title="&#x2F;">首页</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/about/" title="&#x2F;about&#x2F;">关于</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/tags/" title="&#x2F;tags&#x2F;">标签</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/categories/" title="&#x2F;categories&#x2F;">分类</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/archives/" title="&#x2F;archives&#x2F;">归档</a>
+            </li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://dcheric.github.io/2026/03/31/ios-binary-reorder-optimization/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="DCH">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="DCH's Blog">
+      <meta itemprop="description" content="专注于iOS、RN、大前端和AI Agent技术">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="iOS二进制重排冷启动优化：原理、实操与反思 | DCH's Blog">
+      <meta itemprop="description" content="深入探讨 iOS 二进制重排优化原理，从虚拟内存、Page Fault 到 Clang 插桩实战，以及为什么这项技术在现代 iOS 系统中已经过时。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          iOS二进制重排冷启动优化：原理、实操与反思
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+      
+
+      <time title="创建时间：2026-03-31 16:00:00 / 修改时间：17:00:02" itemprop="dateCreated datePublished" datetime="2026-03-31T16:00:00+08:00">2026-03-31</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/iOS/" itemprop="url" rel="index"><span itemprop="name">iOS</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+            <div class="post-description">深入探讨 iOS 二进制重排优化原理，从虚拟内存、Page Fault 到 Clang 插桩实战，以及为什么这项技术在现代 iOS 系统中已经过时。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><h1 id="iOS二进制重排冷启动优化"><a href="#iOS二进制重排冷启动优化" class="headerlink" title="iOS二进制重排冷启动优化"></a>iOS二进制重排冷启动优化</h1><blockquote>
+<p><strong>题外话</strong></p>
+<p>搞完才发现已经过时了。虽然没有有效结果，但是过程收获颇丰。</p>
+</blockquote>
+<span id="more"></span>
+
+<h2 id="为什么二进制重排过时了"><a href="#为什么二进制重排过时了" class="headerlink" title="为什么二进制重排过时了"></a>为什么二进制重排过时了</h2><h3 id="1-iOS-系统层面的优化"><a href="#1-iOS-系统层面的优化" class="headerlink" title="1. iOS 系统层面的优化"></a>1. iOS 系统层面的优化</h3><p>苹果在 iOS 13+ 对 dyld 做了大量优化：</p>
+<ul>
+<li><strong>dyld3</strong> 引入了启动闭包缓存，把符号绑定结果缓存起来，冷启动时直接读缓存</li>
+<li><strong>dyld4</strong>（iOS 15+）进一步优化，page fault 本身已经大幅减少</li>
+</ul>
+<h3 id="2-收益越来越小"><a href="#2-收益越来越小" class="headerlink" title="2. 收益越来越小"></a>2. 收益越来越小</h3><p>二进制重排针对的是 <code>__TEXT</code> 段的 page fault，但现在：</p>
+<ul>
+<li>dyld 缓存覆盖了大部分系统库</li>
+<li>主二进制的 page fault 在整个启动耗时中占比已经很低</li>
+<li>抖音当年做重排收益是 15%，现在同样的工程可能只有 1-3%</li>
+</ul>
+<h3 id="3-维护成本高"><a href="#3-维护成本高" class="headerlink" title="3. 维护成本高"></a>3. 维护成本高</h3><ul>
+<li>每次大版本迭代都要重新收集 order 文件</li>
+<li>Swift flags 兼容性问题</li>
+<li>收益越来越小但维护成本不变</li>
+</ul>
+<h3 id="现在更值得做的启动优化"><a href="#现在更值得做的启动优化" class="headerlink" title="现在更值得做的启动优化"></a>现在更值得做的启动优化</h3><ol>
+<li><strong>动态库合并</strong>：减少 dyld 加载动态库的数量</li>
+<li><strong>+load 方法治理</strong>：延迟非必要的初始化</li>
+<li><strong>启动阶段懒加载</strong>：首屏之外的功能延后初始化</li>
+<li><strong>预编译优化</strong>：减少首次启动的编译时间</li>
+</ol>
+<h2 id="一、什么是二进制重排"><a href="#一、什么是二进制重排" class="headerlink" title="一、什么是二进制重排"></a>一、什么是二进制重排</h2><h3 id="（一）APP启动过程"><a href="#（一）APP启动过程" class="headerlink" title="（一）APP启动过程"></a>（一）APP启动过程</h3><p>要想优化APP的启动速度，首先得要知道APP的启动流程是啥？</p>
+<p>iOS APP启动流程可以分为以下几个阶段：</p>
+<p><img data-src="/images/ios-binary-reorder/launch-sop.png" alt="iOS APP启动流程"></p>
+<h4 id="详细流程说明"><a href="#详细流程说明" class="headerlink" title="详细流程说明"></a>详细流程说明</h4><p><strong>1. 内核加载阶段（Pre-main，系统负责）</strong></p>
+<ul>
+<li>用户点击图标，系统调用 <code>fork()</code> 创建新进程</li>
+<li>内核加载 Mach-O 可执行文件到内存</li>
+<li>检查 Mach-O 文件签名和权限</li>
+<li>为进程分配虚拟内存空间</li>
+</ul>
+<p><strong>2. dyld（动态链接器）阶段（Pre-main，耗时大头）</strong></p>
+<ul>
+<li>加载所有依赖的动态库（Framework、dylib）</li>
+<li>递归加载动态库的依赖</li>
+<li>Rebase：修正内部指针地址（ASLR地址随机化）</li>
+<li>Bind：绑定外部符号（函数、变量）</li>
+<li>Objc setup：注册所有 Objective-C 类、分类、方法</li>
+<li>Initializers：执行 C++ 静态构造函数、Attribute((constructor))</li>
+</ul>
+<p><strong>3. Runtime 初始化阶段（Pre-main）</strong></p>
+<ul>
+<li>执行所有类的 <code>+load</code> 方法（按照依赖顺序）</li>
+<li>Method Swizzling 黑魔法通常在这里执行</li>
+<li><strong>注意</strong>：<code>+load</code> 是阻塞主线程的，耗时操作会明显拖慢启动</li>
+</ul>
+<p><strong>4. main() 函数（Post-main 开始）</strong></p>
+<figure class="highlight objc"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> main(<span class="type">int</span> argc, <span class="type">char</span> * argv[]) &#123;</span><br><span class="line">    <span class="keyword">@autoreleasepool</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">UIApplicationMain</span>(argc, argv, <span class="literal">nil</span>,</span><br><span class="line">                                <span class="built_in">NSStringFromClass</span>([AppDelegate <span class="keyword">class</span>]));</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>5. UIApplicationMain 阶段</strong></p>
+<ul>
+<li>创建 <code>UIApplication</code> 单例对象</li>
+<li>创建 <code>AppDelegate</code> 实例</li>
+<li>开启主线程 RunLoop</li>
+<li>创建 <code>UIWindow</code></li>
+</ul>
+<p><strong>6. AppDelegate 生命周期</strong></p>
+<figure class="highlight objc"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">- application:didFinishLaunchingWithOptions:</span><br><span class="line">    ↓</span><br><span class="line">- applicationDidBecomeActive:</span><br><span class="line">    ↓</span><br><span class="line">首屏渲染完成（启动结束）</span><br></pre></td></tr></table></figure>
+
+<h4 id="启动时间划分"><a href="#启动时间划分" class="headerlink" title="启动时间划分"></a>启动时间划分</h4><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>耗时占比</th>
+<th>优化方向</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Pre-main</strong></td>
+<td>20%-40%</td>
+<td>减少动态库数量、治理+load方法</td>
+</tr>
+<tr>
+<td><strong>main到首屏</strong></td>
+<td>60%-80%</td>
+<td>懒加载、异步初始化、减少首屏业务</td>
+</tr>
+</tbody></table>
+<p><strong>二进制重排优化的就是 dyld 阶段的 Page Fault</strong>，通过调整函数在 Mach-O 文件中的顺序，减少启动时的缺页中断次数。</p>
+<h3 id="（二）虚拟内存"><a href="#（二）虚拟内存" class="headerlink" title="（二）虚拟内存"></a>（二）虚拟内存</h3><p>首先需要知道为什么要有虚拟内存的存在？</p>
+<p>如果没有虚拟内存，程序直接操作物理内存，会有几个严重的问题：</p>
+<h4 id="1-程序之间相互踩踏"><a href="#1-程序之间相互踩踏" class="headerlink" title="1. 程序之间相互踩踏"></a>1. 程序之间相互踩踏</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">物理内存 4GB</span><br><span class="line">├── 0x0000  ~ 0x1000  微信</span><br><span class="line">├── 0x1000  ~ 0x2000  抖音</span><br><span class="line">├── 0x2000  ~ 0x3000  Safari</span><br><span class="line">└── ...</span><br></pre></td></tr></table></figure>
+
+<p>微信的代码如果有 bug，直接写了 <code>0x1500</code> 这个地址，就把抖音的数据覆盖了。程序之间没有任何隔离，一个 bug 能搞崩整个系统。</p>
+<h4 id="2-内存不够用时直接没法运行"><a href="#2-内存不够用时直接没法运行" class="headerlink" title="2. 内存不够用时直接没法运行"></a>2. 内存不够用时直接没法运行</h4><p>物理内存只有 6GB，但如果同时跑：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">微信    500MB</span><br><span class="line">抖音    400MB</span><br><span class="line">游戏   3000MB</span><br><span class="line">Safari  200MB</span><br><span class="line">──────────────</span><br><span class="line">合计   4100MB  &gt; 6GB 不够了</span><br></pre></td></tr></table></figure>
+
+<p>没有虚拟内存的话，直接报错，程序跑不起来。</p>
+<h4 id="3-程序加载地址冲突"><a href="#3-程序加载地址冲突" class="headerlink" title="3. 程序加载地址冲突"></a>3. 程序加载地址冲突</h4><p>每个程序编译时都假设自己从某个固定地址开始，两个程序都想从 <code>0x1000</code> 开始，没法同时运行。</p>
+<h4 id="虚拟内存能解决什么问题？"><a href="#虚拟内存能解决什么问题？" class="headerlink" title="虚拟内存能解决什么问题？"></a>虚拟内存能解决什么问题？</h4><p>每个进程都以为自己独占全部内存，但实际上是假的：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">进程A 看到的内存：        进程B 看到的内存：</span><br><span class="line">0x0000 ~ 0xFFFF...       0x0000 ~ 0xFFFF...</span><br><span class="line">（完整的地址空间）         （完整的地址空间）</span><br><span class="line"></span><br><span class="line">实际物理内存：</span><br><span class="line">┌──────────────────────┐</span><br><span class="line">│  进程A的一部分数据     │</span><br><span class="line">│  进程B的一部分数据     │</span><br><span class="line">│  进程A的另一部分数据   │</span><br><span class="line">│  空闲                 │</span><br><span class="line">└──────────────────────┘</span><br></pre></td></tr></table></figure>
+
+<p>中间有一个映射表（页表）负责翻译：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">进程A 访问虚拟地址 0x1000</span><br><span class="line">         ↓</span><br><span class="line">MMU（内存管理单元，硬件）查页表</span><br><span class="line">         ↓</span><br><span class="line">找到映射：0x1000 → 物理地址 0x5A000</span><br><span class="line">         ↓</span><br><span class="line">实际访问物理内存 0x5A000</span><br></pre></td></tr></table></figure>
+
+<p>iOS&#x2F;macOS 的页大小：<strong>16KB</strong>（ARM64）</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">虚拟地址空间被切成一页一页：</span><br><span class="line"> [页0][页1][页2][页3]...</span><br><span class="line"></span><br><span class="line">物理内存也被切成一页一页：</span><br><span class="line">[页A][页B][页C][页D]...</span><br><span class="line"></span><br><span class="line">页表记录映射关系：</span><br><span class="line">虚拟页0 → 物理页C</span><br><span class="line">虚拟页1 → 物理页A</span><br><span class="line">虚拟页2 → 磁盘（已swap out）</span><br><span class="line">虚拟页3 → 未分配</span><br></pre></td></tr></table></figure>
+
+<p>可以带来几个好处：</p>
+<ul>
+<li><strong>隔离性</strong>：同样的虚拟地址，映射到不同物理地址。进程 A 永远访问不到进程 B 的内存，天然隔离。</li>
+<li><strong>懒分配</strong>：程序申请了内存，不代表立刻占用物理内存。程序申请的内存远大于实际用到的内存，系统按需分配。</li>
+<li><strong>Swap</strong>：物理内存不够时，把暂时不用的内存页存到磁盘。macOS 有 Swap，所以 Mac 可以开很多程序。iOS 没有 Swap（闪存寿命），内存不够直接杀进程。</li>
+</ul>
+<h3 id="（三）Page-Fault问题的出现"><a href="#（三）Page-Fault问题的出现" class="headerlink" title="（三）Page Fault问题的出现"></a>（三）Page Fault问题的出现</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">程序访问虚拟地址</span><br><span class="line">    ↓</span><br><span class="line">MMU 查页表</span><br><span class="line">    ↓</span><br><span class="line">┌─────────────────────────────┐</span><br><span class="line">│ 情况1：页在物理内存里         │→ 直接访问，极快</span><br><span class="line">│ 情况2：页在磁盘里（swap）     │→ 读磁盘，慢</span><br><span class="line">│ 情况3：页还没分配             │→ 分配新物理页，中等</span><br><span class="line">│ 情况4：非法地址               │→ SIGSEGV，程序崩溃</span><br><span class="line">└─────────────────────────────┘</span><br></pre></td></tr></table></figure>
+
+<p><strong>启动优化的二进制重排，就是为了减少情况3的发生次数</strong>——把启动时用到的代码集中在少数几页里，减少 Page Fault。</p>
+<p>App 的二进制文件躺在磁盘上，启动时不是一次性全部读入内存的，而是按页懒加载：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">磁盘上的二进制文件（按编译顺序排列）：</span><br><span class="line">┌──────┬──────┬──────┬──────┬──────┬──────┐</span><br><span class="line">│ 页0  │ 页1  │ 页2  │ 页3  │ 页4  │ 页5  │</span><br><span class="line">│setupA│ 其他 │main()│ 其他 │viewD │ 其他 │</span><br><span class="line">└──────┴──────┴──────┴──────┴──────┴──────┘</span><br><span class="line"></span><br><span class="line">启动时需要执行的函数：</span><br><span class="line">main() → 在页2</span><br><span class="line">viewDidLoad() → 在页4</span><br><span class="line">setupUI() → 在页0</span><br></pre></td></tr></table></figure>
+
+<p>每访问一个新的页，就触发一次 Page Fault，系统要：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">Page Fault 触发</span><br><span class="line">    ↓</span><br><span class="line">暂停当前线程</span><br><span class="line">    ↓</span><br><span class="line">内核介入，从磁盘读取对应页到物理内存</span><br><span class="line">    ↓</span><br><span class="line">恢复线程继续执行</span><br></pre></td></tr></table></figure>
+
+<p><strong>单次 Page Fault 大约耗时 0.1ms ~ 1ms</strong>，启动时可能触发几百次，累计就是几百毫秒。</p>
+<h3 id="（四）二进制重排详解"><a href="#（四）二进制重排详解" class="headerlink" title="（四）二进制重排详解"></a>（四）二进制重排详解</h3><p><strong>核心思路</strong>：把启动时用到的函数，集中排列在二进制文件的前几页</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">重排前：</span><br><span class="line">┌──────┬──────┬──────┬──────┬──────┬──────┐</span><br><span class="line">│ 页0  │ 页1  │ 页2  │ 页3  │ 页4  │ 页5  │</span><br><span class="line">│setupA│ 其他 │main()│ 其他 │viewD │ 其他 │</span><br><span class="line">└──────┴──────┴──────┴──────┴──────┴──────┘</span><br><span class="line">启动需要访问：页0、页2、页4 → 3次 Page Fault</span><br><span class="line"></span><br><span class="line">重排后：</span><br><span class="line">┌──────┬──────┬──────┬──────┬──────┬──────┐</span><br><span class="line">│ 页0  │ 页1  │ 页2  │ 页3  │ 页4  │ 页5  │</span><br><span class="line">│main()│viewD │setupA│ 其他 │ 其他 │ 其他 │</span><br><span class="line">└──────┴──────┴──────┴──────┴──────┴──────┘</span><br><span class="line">启动需要访问：页0、页1 → 2次 Page Fault（少了1次）</span><br></pre></td></tr></table></figure>
+
+<p>实际项目里启动函数可能分散在几百页，重排后集中到几十页，效果非常显著。</p>
+<h2 id="二、Lisa冷启动page-fault现状"><a href="#二、Lisa冷启动page-fault现状" class="headerlink" title="二、Lisa冷启动page fault现状"></a>二、Lisa冷启动page fault现状</h2><p>通过Instruments工具集中的System Trace工具，可以看到在冷启动的时候，”File Backend Page in”的数量为10671，这就是缺页中断Page Fault的数量，整体启动耗时833.31ms</p>
+<!-- 注意：请将对应的截图放到 source/images/ 目录下，并更新下面的图片路径 -->
+<p><img data-src="/images/ios-binary-reorder/page-fault-before.png" alt="Page Fault 现状"></p>
+<h2 id="三、优化实操"><a href="#三、优化实操" class="headerlink" title="三、优化实操"></a>三、优化实操</h2><p>实际上，二进制重排的步骤并不复杂，真正的难点在于如何按照函数的执行顺序去重新排列页表中的page。</p>
+<p>Xcode使用的链接器是 <strong>ld</strong>，ld中有一个参数是 <strong>order file</strong>，order file是一个文件路径，它指向了order文件，order文件中写入的是符号的顺序，Xcode在编译打包的时候就会生成按照order文件中的符号顺序排列的可执行文件。</p>
+<h3 id="（一）查看二进制可执行文件中的符号顺序"><a href="#（一）查看二进制可执行文件中的符号顺序" class="headerlink" title="（一）查看二进制可执行文件中的符号顺序"></a>（一）查看二进制可执行文件中的符号顺序</h3><!-- 图片：Compile Sources -->
+<p><img data-src="/images/ios-binary-reorder/compile-sources.png" alt="Compile Sources"></p>
+<p>如图所示，当前项目工程里面的所有的源文件都是记录在Compile Sources里面。每一个源文件在编译的时候都会生成一个目标文件（.o），然后将所有的.o以及静态库等链接成一个Mach-O，这个链接的顺序就是按照Compile Sources里面的顺序来的，而这里的顺序是可以手动拖动的。</p>
+<p>所以说，<strong>文件的顺序就确定了</strong>。</p>
+<h4 id="如何查看整个项目中的符号顺序呢？"><a href="#如何查看整个项目中的符号顺序呢？" class="headerlink" title="如何查看整个项目中的符号顺序呢？"></a>如何查看整个项目中的符号顺序呢？</h4><!-- 图片：Write Link Map File -->
+<p><img data-src="/images/ios-binary-reorder/write-link-map-file.png" alt="Write Link Map File"></p>
+<p><strong>Write Link Map File 的作用</strong>： 开启后，每次编译 Xcode 会生成一个 <code>LinkMap.txt</code> 文件，记录链接器把所有代码和库组装成最终二进制时的详细信息。</p>
+<p>开启后编译一次，在文件系统中的如下路径找到 <code>LinkMap.txt</code> 文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">/Users/dch/Library/Developer/Xcode/DerivedData/Lisa-bpdbzitrcrsqbzdijihznmthaqcx/Build/Intermediates.noindex/XXX.build/Debug-iphoneos/XXX.build/XXX-LinkMap-normal-arm64.txt</span><br></pre></td></tr></table></figure>
+
+<h3 id="（二）LinkMap-文件里有什么"><a href="#（二）LinkMap-文件里有什么" class="headerlink" title="（二）LinkMap 文件里有什么"></a>（二）LinkMap 文件里有什么</h3><h4 id="1-目标文件列表"><a href="#1-目标文件列表" class="headerlink" title="1. 目标文件列表"></a>1. 目标文件列表</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"># Object files:</span><br><span class="line">[  0] linker synthesized</span><br><span class="line">[  1] /Users/.../Lisa.build/main.o</span><br><span class="line">[  2] /Users/.../HomeViewController.o</span><br><span class="line">[  3] /Users/.../Alamofire.o</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+
+<p>这里面记录的是所有参与链接的 <code>.o</code> 文件，文件顺序就是Compile Sources里面的顺序。</p>
+<h4 id="2-段和区域布局"><a href="#2-段和区域布局" class="headerlink" title="2. 段和区域布局"></a>2. 段和区域布局</h4><p>记录的是MachO二进制可执行文件里面段的一些数据，Segment这一列表示是哪一段：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"># Sections:</span><br><span class="line"># Address    Size        Segment  Section</span><br><span class="line">0x100004000  0x001A3210  __TEXT   __text       ← 代码</span><br><span class="line">0x1001A7210  0x0000E800  __TEXT   __stubs      ← 动态库桩</span><br><span class="line">0x1001B5A10  0x00012340  __DATA   __data       ← 数据</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+
+<!-- 图片：Sections -->
+<p><img data-src="/images/ios-binary-reorder/sections.png" alt="Sections"></p>
+<h4 id="3-符号表（最有用）"><a href="#3-符号表（最有用）" class="headerlink" title="3. 符号表（最有用）"></a>3. 符号表（最有用）</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"># Symbols:</span><br><span class="line"># Address    Size        File  Name</span><br><span class="line">0x100004000  0x00000124  [  2] -[HomeViewController viewDidLoad]</span><br><span class="line">0x100004124  0x00000089  [  2] -[HomeViewController setupUI]</span><br><span class="line">0x1000041AD  0x000000F0  [  3] Alamofire.SessionManager.init</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+
+<p>每个函数在二进制里的地址、大小、来自哪个文件。</p>
+<p>Symbols里面的数据有四列：<strong>Address、Size、File、Name</strong></p>
+<ul>
+<li><strong>Name</strong>：方法名或者函数名</li>
+<li><strong>File</strong>：在哪一个文件当中，这里面的数字给最上方Object files里面的数字是对应的</li>
+<li><strong>Size</strong>：这个方法或者函数占用的空间大小，函数里面的内容多少不一样，其Size也是不一样的，100行代码的方法肯定比1行代码的方法的Size要大。</li>
+<li><strong>Address</strong>：这个方法或者函数的真实的地址，不是这个方法对应的符号地址（符号地址就是存储在MachO文件的Data段中的符号）。二进制重排，实际上就是将相关代码的所有内容放到前面去，而不仅仅是简简单单将符号放到前面。</li>
+</ul>
+<h4 id="LinkMap-文件的作用："><a href="#LinkMap-文件的作用：" class="headerlink" title="LinkMap 文件的作用："></a>LinkMap 文件的作用：</h4><ul>
+<li><strong>分析包大小</strong>：哪个类、哪个库占了多少空间，一目了然，做包体积优化必备。</li>
+<li><strong>验证二进制重排</strong>：对比 order file 配置前后，函数排列顺序是否真的改变了。</li>
+<li><strong>分析符号顺序</strong>：启动优化时，确认启动相关函数是否都集中在前面几页。</li>
+<li><strong>排查符号冲突</strong>：链接报错时，找到哪两个库定义了同名符号。</li>
+</ul>
+<h3 id="（三）如何修改二进制文件的编译顺序"><a href="#（三）如何修改二进制文件的编译顺序" class="headerlink" title="（三）如何修改二进制文件的编译顺序"></a>（三）如何修改二进制文件的编译顺序</h3><p>前面说到过，Xcode在编译打包的时候就会生成按照order文件中的符号顺序排列的可执行文件，因此接下来我们自定义order文件。</p>
+<h4 id="1-在项目根目录创建order文件"><a href="#1-在项目根目录创建order文件" class="headerlink" title="1. 在项目根目录创建order文件"></a>1. 在项目根目录创建order文件</h4><p>写入 <code>_main</code> 到第一行</p>
+<p>在Xcode中配置Order File文件路径（<code>./</code> 表示的是工程的根目录）</p>
+<!-- 图片：配置Order File -->
+<p><img data-src="/images/ios-binary-reorder/config-order-file.png" alt="配置Order File"></p>
+<p>重新查看LinkMap文件</p>
+<p>一个Order文件外加一个配置就搞定，<strong>真正的难点在于去找到启动时刻的符号</strong>，也就是说，你需要知道要将哪些符号排列到前面去？</p>
+<h3 id="（四）如何拿到启动时刻的符号？"><a href="#（四）如何拿到启动时刻的符号？" class="headerlink" title="（四）如何拿到启动时刻的符号？"></a>（四）如何拿到启动时刻的符号？</h3><h4 id="Clang插桩"><a href="#Clang插桩" class="headerlink" title="Clang插桩"></a>Clang插桩</h4><p>官方文档：<a target="_blank" rel="noopener" href="https://clang.llvm.org/docs/SanitizerCoverage.html">https://clang.llvm.org/docs/SanitizerCoverage.html</a></p>
+<p>插桩是Clang自带的工具，它可以实现所有符号的Hook。</p>
+<p>首先在Xcode中配置参数：<code>-fsanitize-coverage=func,trace-pc-guard</code></p>
+<!-- 图片：配置插桩参数 -->
+<p><img data-src="/images/ios-binary-reorder/sanitizer-config.png" alt="配置插桩参数"></p>
+<p>然后直接运行会报错：</p>
+<!-- 图片：报错信息 -->
+<p><img data-src="/images/ios-binary-reorder/error.png" alt="报错信息"></p>
+<h4 id="1-符号收集器"><a href="#1-符号收集器" class="headerlink" title="1. 符号收集器"></a>1. 符号收集器</h4><p>在项目工程中添加文件：<code>/Users/dch/XXX-ios/XXX/XXX/XXX/SanitizerTrace.m</code></p>
+<figure class="highlight objc"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#import <span class="string">&lt;Foundation/Foundation.h&gt;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&lt;dlfcn.h&gt;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&lt;libkern/OSAtomic.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">typedef</span> <span class="keyword">struct</span> &#123;</span><br><span class="line">    <span class="type">void</span> *pc;</span><br><span class="line">    <span class="type">void</span> *next;</span><br><span class="line">&#125; SymbolNode;</span><br><span class="line"></span><br><span class="line">OSQueueHead symbolList = OS_ATOMIC_QUEUE_INIT;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> __sanitizer_cov_trace_pc_guard_init(uint32_t *start, uint32_t *stop) &#123;</span><br><span class="line">    <span class="keyword">static</span> uint64_t N = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">if</span> (start == stop || *start) <span class="keyword">return</span>;</span><br><span class="line">    <span class="keyword">for</span> (uint32_t *x = start; x &lt; stop; x++) &#123;</span><br><span class="line">        *x = ++N;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> __sanitizer_cov_trace_pc_guard(uint32_t *guard) &#123;</span><br><span class="line">    <span class="type">void</span> *PC = __builtin_return_address(<span class="number">0</span>);</span><br><span class="line">    SymbolNode *node = malloc(<span class="keyword">sizeof</span>(SymbolNode));</span><br><span class="line">    *node = (SymbolNode)&#123;PC, <span class="literal">NULL</span>&#125;;</span><br><span class="line">    OSAtomicEnqueue(&amp;symbolList, node, offsetof(SymbolNode, next));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>现在可以正常运行了。</p>
+<p>无论是方法还是函数还是block，它们在调用的时候，首先都会调用 <code>__sanitizer_cov_trace_pc_guard</code> 函数。也就是说，当配置了Clang代码插入工具之后，编译器会在编译的时候在所有的方法、函数、block内部都加入了一条调用 <code>__sanitizer_cov_trace_pc_guard</code> 函数的汇编代码，这就是所谓的<strong>Clang静态插桩，Hook一切</strong>。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">void __sanitizer_cov_trace_pc_guard_init   // 给每个函数编号</span><br><span class="line">void __sanitizer_cov_trace_pc_guard        // 每次函数被调用时，把地址存入队列</span><br></pre></td></tr></table></figure>
+
+<p><strong>作用</strong>：被动收集。编译器插桩后，每当任意函数被调用，这里就自动记录一次，把函数地址塞进 <code>symbolList</code> 队列里。你不需要主动调用它，它是自动触发的。</p>
+<h4 id="2-符号导出器"><a href="#2-符号导出器" class="headerlink" title="2. 符号导出器"></a>2. 符号导出器</h4><p>修改 <code>AppDelegate.m</code> 文件：</p>
+<figure class="highlight objc"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br></pre></td><td class="code"><pre><span class="line">      </span><br><span class="line"><span class="comment">//</span></span><br><span class="line"><span class="comment">//  AppDelegate.m</span></span><br><span class="line"><span class="comment">//  LiIntl</span></span><br><span class="line"><span class="comment">//</span></span><br><span class="line"><span class="comment">//  Created by 陈林章 on 2024/1/9.</span></span><br><span class="line"><span class="comment">//</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#import <span class="string">&lt;UserNotifications/UserNotifications.h&gt;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&quot;Lisa-Swift.h&quot;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&quot;AppDelegate.h&quot;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&quot;LXAppEngine.h&quot;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&quot;LXPlatformDelegate.h&quot;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&quot;LXFedTrackLogger.h&quot;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&quot;Lisa-Swift.h&quot;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&quot;LXWebViewJsNameLoader.h&quot;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&quot;AppDelegate+UNUserNotificationCenterDelegate.h&quot;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&quot;AppDelegate+LXBackgroundTasks.h&quot;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&quot;OpenInstallSDK.h&quot;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&quot;LXEnvModel.h&quot;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&quot;LXStorageTool.h&quot;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&quot;VPSDKLagMonitor.h&quot;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&lt;dlfcn.h&gt;</span></span></span><br><span class="line"><span class="meta">#import <span class="string">&lt;libkern/OSAtomic.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">if</span> DEBUGWITHOUTVEHICLE</span></span><br><span class="line"><span class="built_in">NSString</span> * <span class="keyword">const</span> kGroupShareKey = <span class="string">@&quot;group.com.chehejia.oc.m01.debug&quot;</span>;</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">extern</span> <span class="built_in">CFAbsoluteTime</span> StartTime;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 符号节点结构体（与 SanitizerTrace.c 保持一致）</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="keyword">struct</span> &#123;</span><br><span class="line">    <span class="type">void</span> *pc;</span><br><span class="line">    <span class="type">void</span> *next;</span><br><span class="line">&#125; SymbolNode;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 引用 SanitizerTrace.c 中的队列</span></span><br><span class="line"><span class="keyword">extern</span> OSQueueHead symbolList;</span><br><span class="line"></span><br><span class="line"><span class="class"><span class="keyword">@interface</span> <span class="title">AppDelegate</span>()&lt;<span class="title">OpenInstallDelegate</span>&gt;</span></span><br><span class="line"><span class="keyword">@property</span> (<span class="keyword">nonatomic</span>, <span class="keyword">weak</span>) <span class="built_in">UIApplication</span> *app;</span><br><span class="line"><span class="keyword">@end</span></span><br><span class="line"></span><br><span class="line"><span class="class"><span class="keyword">@implementation</span> <span class="title">AppDelegate</span></span></span><br><span class="line"></span><br><span class="line">- (<span class="type">void</span>)dealloc &#123;</span><br><span class="line">    [[<span class="built_in">NSNotificationCenter</span> defaultCenter] removeObserver:<span class="keyword">self</span>];</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">- (<span class="type">void</span>)a:(<span class="built_in">NSNotification</span> *)no &#123;</span><br><span class="line">    <span class="keyword">self</span>.orientationMask = [no.object[<span class="string">@&quot;value&quot;</span>] intValue];</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">- (<span class="type">BOOL</span>)application:(<span class="built_in">UIApplication</span> *)application didFinishLaunchingWithOptions:(<span class="built_in">NSDictionary</span> *)launchOptions &#123;</span><br><span class="line">    [[<span class="built_in">NSUserDefaults</span> standardUserDefaults] removeObjectForKey:<span class="string">@&quot;Cache.Notebook.Input&quot;</span>];</span><br><span class="line">    <span class="built_in">NSTimeInterval</span> terminateTime =</span><br><span class="line">        [[<span class="built_in">NSUserDefaults</span> standardUserDefaults] doubleForKey:<span class="string">@&quot;AppTerminateTime&quot;</span>];</span><br><span class="line">    <span class="keyword">if</span> (terminateTime) &#123;</span><br><span class="line">        LLXLogV(<span class="string">@&quot;上次退出时间：%f&quot;</span>, terminateTime);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        LLXLogV(<span class="string">@&quot;没有记录过退出时间&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    [[<span class="built_in">NSNotificationCenter</span> defaultCenter] addObserver:<span class="keyword">self</span> selector:<span class="keyword">@selector</span>(a:) name:<span class="string">@&quot;UIInterfaceOrientationMaskChange&quot;</span> object:<span class="literal">nil</span>];</span><br><span class="line">    [[LXIBeaconWakeupManager shared] setupGlassesWakeupMonitor];</span><br><span class="line">    <span class="keyword">self</span>.hasEnteredForeground = <span class="literal">NO</span>;</span><br><span class="line">    [[LXGRPCCertificateData shared] initCertificateArrayWithCompletion:^&#123;&#125;];</span><br><span class="line">    _launchOptions = launchOptions;</span><br><span class="line">    LXAppEngine *engine = [LXAppEngine new];</span><br><span class="line">    [engine start];</span><br><span class="line">    </span><br><span class="line">    <span class="type">BOOL</span> agreed = [[<span class="built_in">NSUserDefaults</span> standardUserDefaults] boolForKey: <span class="string">@&quot;appPrivacyAgreed&quot;</span>];</span><br><span class="line">    <span class="keyword">if</span> (agreed) &#123;</span><br><span class="line">        [LXRouter openRouter:<span class="string">@&quot;LX://Account/InitSDK&quot;</span> withParams:<span class="literal">nil</span>];</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    [LXGrpcMessageHelper setCommonParametersProvider:[LXGrpcCommonParametersProvider shared]];</span><br><span class="line">    [[LXGrpcTypeRegistry shared] autoRegisterFromConfig];</span><br><span class="line"></span><br><span class="line">    [<span class="built_in">UIApplication</span> sharedApplication].applicationIconBadgeNumber = <span class="number">0</span>;</span><br><span class="line">    [<span class="keyword">self</span> setupNotificationWithApp:application options:launchOptions];</span><br><span class="line">    [[LXShareManager shared] setup];</span><br><span class="line">    [<span class="keyword">self</span> registBgTask];</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">self</span>.orientationMask = <span class="built_in">UIInterfaceOrientationMaskPortrait</span>;</span><br><span class="line">    </span><br><span class="line">    [[NoteResourceCleanup shared] runCleanupIfNeededWithReason:<span class="string">@&quot;app_launch&quot;</span> intervalDays:<span class="number">7</span> now:[<span class="built_in">NSDate</span> date]];</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 延迟3秒收集符号，确保首屏加载完成</span></span><br><span class="line">    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, <span class="number">3</span> * <span class="built_in">NSEC_PER_SEC</span>),</span><br><span class="line">                   dispatch_get_main_queue(), ^&#123;</span><br><span class="line">        [<span class="keyword">self</span> generateOrderFile];</span><br><span class="line">    &#125;);</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">return</span> <span class="literal">YES</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">- (<span class="type">void</span>)generateOrderFile &#123;</span><br><span class="line">    <span class="built_in">NSMutableArray</span>&lt;<span class="built_in">NSString</span> *&gt; *symbolNames = [<span class="built_in">NSMutableArray</span> array];</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 取出所有符号节点</span></span><br><span class="line">    <span class="keyword">while</span> (<span class="literal">YES</span>) &#123;</span><br><span class="line">        SymbolNode *node = OSAtomicDequeue(&amp;symbolList,</span><br><span class="line">                                           offsetof(SymbolNode, next));</span><br><span class="line">        <span class="keyword">if</span> (node == <span class="literal">NULL</span>) <span class="keyword">break</span>;</span><br><span class="line">        </span><br><span class="line">        Dl_info info;</span><br><span class="line">        dladdr(node-&gt;pc, &amp;info);</span><br><span class="line">        </span><br><span class="line">        <span class="built_in">NSString</span> *name = @(info.dli_sname);</span><br><span class="line">        <span class="comment">// OC方法直接用，C/Swift函数前加下划线</span></span><br><span class="line">        <span class="type">BOOL</span> isObjc = [name hasPrefix:<span class="string">@&quot;+[&quot;</span>] || [name hasPrefix:<span class="string">@&quot;-[&quot;</span>];</span><br><span class="line">        <span class="built_in">NSString</span> *symbolName = isObjc ? name : [<span class="string">@&quot;_&quot;</span> stringByAppendingString:name];</span><br><span class="line">        [symbolNames addObject:symbolName];</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 反转顺序（原子队列后进先出，需要反转）</span></span><br><span class="line">    <span class="built_in">NSEnumerator</span> *emt = [symbolNames reverseObjectEnumerator];</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 去重</span></span><br><span class="line">    <span class="built_in">NSMutableArray</span>&lt;<span class="built_in">NSString</span> *&gt; *funcs = [<span class="built_in">NSMutableArray</span> array];</span><br><span class="line">    <span class="built_in">NSString</span> *name;</span><br><span class="line">    <span class="keyword">while</span> (name = [emt nextObject]) &#123;</span><br><span class="line">        <span class="keyword">if</span> (![funcs containsObject:name]) &#123;</span><br><span class="line">            [funcs addObject:name];</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 移除当前函数自身</span></span><br><span class="line">    [funcs removeObject:[<span class="built_in">NSString</span> stringWithFormat:<span class="string">@&quot;%s&quot;</span>, __FUNCTION__]];</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 写入文件</span></span><br><span class="line">    <span class="built_in">NSString</span> *content = [funcs componentsJoinedByString:<span class="string">@&quot;\n&quot;</span>];</span><br><span class="line">    <span class="built_in">NSString</span> *docPath = [<span class="built_in">NSSearchPathForDirectoriesInDomains</span>(</span><br><span class="line">                          <span class="built_in">NSDocumentDirectory</span>, <span class="built_in">NSUserDomainMask</span>, <span class="literal">YES</span>) firstObject];</span><br><span class="line">    <span class="built_in">NSString</span> *filePath = [docPath stringByAppendingPathComponent:<span class="string">@&quot;lisa.order&quot;</span>];</span><br><span class="line">    <span class="built_in">NSError</span> *error = <span class="literal">nil</span>;</span><br><span class="line">    [content writeToFile:filePath</span><br><span class="line">              atomically:<span class="literal">YES</span></span><br><span class="line">                encoding:<span class="built_in">NSUTF8StringEncoding</span></span><br><span class="line">                   error:&amp;error];</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">if</span> (error) &#123;</span><br><span class="line">        <span class="built_in">NSLog</span>(<span class="string">@&quot;❌ Order file error: %@&quot;</span>, error);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="built_in">NSLog</span>(<span class="string">@&quot;✅ Order file path: %@&quot;</span>, filePath);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">- (<span class="built_in">UIInterfaceOrientationMask</span>)application:(<span class="built_in">UIApplication</span> *)application supportedInterfaceOrientationsForWindow:(<span class="built_in">UIWindow</span> *)window &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="keyword">self</span>.orientationMask;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">- (<span class="type">BOOL</span>)application:(<span class="built_in">UIApplication</span> *)application continueUserActivity:(<span class="built_in">NSUserActivity</span> *)userActivity restorationHandler:(<span class="type">void</span>(^)(<span class="built_in">NSArray</span>&lt;<span class="type">id</span>&lt;<span class="built_in">UIUserActivityRestoring</span>&gt;&gt; * __<span class="keyword">nullable</span> restorableObjects))restorationHandler &#123;</span><br><span class="line">    [[LXShareManager shared] handleOpenUniversalLinkWithUserActivity:userActivity];</span><br><span class="line">    [OpenInstallSDK continueUserActivity:userActivity];</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">YES</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">pragma</span> mark - UISceneSession lifecycle</span></span><br><span class="line"></span><br><span class="line">- (<span class="built_in">UISceneConfiguration</span> *)application:(<span class="built_in">UIApplication</span> *)application configurationForConnectingSceneSession:(<span class="built_in">UISceneSession</span> *)connectingSceneSession options:(<span class="built_in">UISceneConnectionOptions</span> *)options &#123;</span><br><span class="line">    <span class="keyword">return</span> [[<span class="built_in">UISceneConfiguration</span> alloc] initWithName:<span class="string">@&quot;Default Configuration&quot;</span> sessionRole:connectingSceneSession.role];</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">- (<span class="type">void</span>)application:(<span class="built_in">UIApplication</span> *)application didDiscardSceneSessions:(<span class="built_in">NSSet</span>&lt;<span class="built_in">UISceneSession</span> *&gt; *)sceneSessions &#123;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">- (<span class="type">void</span>)application:(<span class="built_in">UIApplication</span> *)application didRegisterForRemoteNotificationsWithDeviceToken:(<span class="built_in">NSData</span> *)deviceToken &#123;</span><br><span class="line">    [[LPushClient defaultClient] registerDeviceToken:deviceToken completion:^(<span class="built_in">NSError</span> * _Nullable error) &#123;</span><br><span class="line">        <span class="keyword">if</span> (error) &#123;</span><br><span class="line">            LLXErrorV(<span class="string">@&quot;[LPush] failed to register apns token. error=%@&quot;</span>, error);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            LLXLogV(<span class="string">@&quot;[LPush] pushid = %@, deviceId = %@&quot;</span>, [[LPushClient defaultClient] deviceId], gCurrentPlatform.deviceID);</span><br><span class="line">            [[LPushClient defaultClient] registerAPNsWithRegister:gCurrentPlatform.hadLogin];</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;];</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">- (<span class="type">void</span>)application:(<span class="built_in">UIApplication</span> *)application didFailToRegisterForRemoteNotificationsWithError:(<span class="built_in">NSError</span> *)error &#123;</span><br><span class="line">    LLXLogV(<span class="string">@&quot;failed to register for remote notification. error=%@&quot;</span>, error);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">- (<span class="type">void</span>)application:(<span class="built_in">UIApplication</span> *)application didReceiveRemoteNotification:(<span class="built_in">NSDictionary</span> *)userInfo fetchCompletionHandler:(<span class="type">void</span> (^)(<span class="built_in">UIBackgroundFetchResult</span>))completionHandler &#123;</span><br><span class="line">    LLXLogV(<span class="string">@&quot;[LPush] %@&quot;</span>, userInfo);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">-(<span class="built_in">UIWindow</span> *)window &#123;</span><br><span class="line">    <span class="keyword">for</span> (<span class="built_in">UIScene</span> *scene <span class="keyword">in</span> <span class="keyword">self</span>.app.connectedScenes) &#123;</span><br><span class="line">        <span class="keyword">if</span> ([scene isKindOfClass: [<span class="built_in">UIWindowScene</span> <span class="keyword">class</span>]] &amp;&amp; scene.activationState == <span class="built_in">UISceneActivationStateForegroundActive</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span> ((<span class="built_in">UIWindowScene</span> *)scene).keyWindow;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">+ (<span class="type">void</span>)launchTime &#123;</span><br><span class="line">    <span class="built_in">CFAbsoluteTime</span> launchTime = (<span class="built_in">CFAbsoluteTimeGetCurrent</span>() - StartTime);</span><br><span class="line">    LLXLogV(<span class="string">@&quot;AppLaunchTime: %f ms&quot;</span>, launchTime * <span class="number">1000.0</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">pragma</span> mark - OpenInstallDelegate</span></span><br><span class="line"></span><br><span class="line">-(<span class="type">void</span>)getWakeUpParams:(OpeninstallData *)appData &#123;</span><br><span class="line">    <span class="keyword">if</span> (appData.data) &#123;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (appData.channelCode) &#123;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">- (<span class="type">void</span>)setupOpenInstall &#123;</span><br><span class="line">    [OpenInstallSDK initWithDelegate:<span class="keyword">self</span>];</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">- (<span class="type">void</span>)applicationWillTerminate:(<span class="built_in">UIApplication</span> *)application &#123;</span><br><span class="line">    LLXLogV(<span class="string">@&quot;AppDelegate applicationWillTerminate.&quot;</span>);</span><br><span class="line">    <span class="built_in">NSTimeInterval</span> now = [[<span class="built_in">NSDate</span> now] timeIntervalSince1970];</span><br><span class="line">    [[<span class="built_in">NSUserDefaults</span> standardUserDefaults] setDouble:now forKey:<span class="string">@&quot;AppTerminateTime&quot;</span>];</span><br><span class="line">    [[<span class="built_in">NSUserDefaults</span> standardUserDefaults] synchronize];</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">@end</span></span><br></pre></td></tr></table></figure>
+
+<p><strong><code>- (void)generateOrderFile</code></strong> 的作用：主动导出。5秒后把 <code>symbolList</code> 里积累的所有函数地址，通过 <code>dladdr()</code> 转成可读的函数名，去重、排序后写成 <code>.order</code> 文件保存到沙盒。</p>
+<h3 id="五-导出order文件"><a href="#五-导出order文件" class="headerlink" title="(五) 导出order文件"></a>(五) 导出order文件</h3><p>编译运行后，终端日志会看到：</p>
+<!-- 图片：日志输出 -->
+<p><img data-src="/images/ios-binary-reorder/log-output.png" alt="日志输出"></p>
+<p>从APP沙盒中把 <code>lisa.order</code> 文件拷贝到项目根目录：<code>/Users/dch/XXX-ios/XXX/XXX/XXX.order</code></p>
+<p>可以看到生成的 <code>lisa.order</code> 就是启动时的符号顺序。</p>
+<p>在Xcode中配置路径</p>
+<p>编译运行后，查看LinkMap文件，和order中的顺序一致：</p>
+<p>最后看看page fault 效果怎么样</p>
+<!-- 图片：优化后的Page Fault -->
+<p><img data-src="/images/ios-binary-reorder/page-fault-after.png" alt="优化后的Page Fault"></p>
+<p><strong>Page fault count 从原来的10671降低到了4213。整体启动耗时从833.31ms降低到了374.47ms。</strong></p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><h3 id="整体流程"><a href="#整体流程" class="headerlink" title="整体流程"></a>整体流程</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">编译时加 flags</span><br><span class="line">    ↓</span><br><span class="line">每个函数被插桩（自动）</span><br><span class="line">    ↓</span><br><span class="line">App 启动，函数被调用 → SanitizerTrace.m 自动记录地址</span><br><span class="line">    ↓</span><br><span class="line">5秒后 AppDelegate 触发导出</span><br><span class="line">    ↓</span><br><span class="line">生成 lisa.order 文件</span><br><span class="line">    ↓</span><br><span class="line">从沙盒取出 order 文件</span><br><span class="line">    ↓</span><br><span class="line">配置到 Xcode Build Settings → Order File</span><br><span class="line">    ↓</span><br><span class="line">重新打包，二进制按顺序重排</span><br></pre></td></tr></table></figure>
+
+<h3 id="注意"><a href="#注意" class="headerlink" title="注意"></a>注意</h3><p>在优化完毕之后，注意将符号的Hook、定位、保存以及生成Order文件的相关代码给去掉，只需要拿到对应的Order文件，然后放入工程根目录即可。</p>
+<h3 id="反思"><a href="#反思" class="headerlink" title="反思"></a>反思</h3><p>虽然这次实验结果并不理想（甚至变慢了），但通过这个过程，我深入理解了：</p>
+<ul>
+<li>虚拟内存和 Page Fault 的底层原理</li>
+<li>Mach-O 文件结构和符号链接过程</li>
+<li>Clang 插桩技术的实现机制</li>
+<li>LinkMap 文件的作用和分析方法</li>
+</ul>
+<p><strong>更重要的是</strong>，我意识到盲目追求”业界成熟方案”并不可取，需要根据实际情况（iOS版本、项目规模、启动流程）判断优化手段是否适用。有时候，”不做优化”也是一种正确的决策。</p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
+<li><a target="_blank" rel="noopener" href="https://clang.llvm.org/docs/SanitizerCoverage.html">Clang SanitizerCoverage 官方文档</a></li>
+<li><a target="_blank" rel="noopener" href="https://developer.apple.com/documentation/xcode/understanding-and-analyzing-application-crash-reports">Apple - Understanding and Analyzing Application Crash Reports</a></li>
+<li><a target="_blank" rel="noopener" href="https://developer.apple.com/videos/play/wwdc2017/413/">iOS App Startup Time: Past, Present, and Future - WWDC 2017</a></li>
+<li><a target="_blank" rel="noopener" href="https://mp.weixin.qq.com/s/MVOm4aELjDgr4A6HAYnvew">启动优化之Clang插桩实现二进制重排</a></li>
+<li><a target="_blank" rel="noopener" href="https://mp.weixin.qq.com/s/CUUZlAvKGqDxHeFQhy2eDQ">启动优化一</a></li>
+<li><a target="_blank" rel="noopener" href="https://mp.weixin.qq.com/s/d7EVg4b8uLJZoFTV6eOCsg">启动优化二</a></li>
+<li><a target="_blank" rel="noopener" href="https://mp.weixin.qq.com/s/Drmmx5JtjG3UtTFksL6Q8Q">抖音研发实践：基于二进制文件重排的解决方案 APP启动速度提升超15%</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>DCH
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://dcheric.github.io/2026/03/31/ios-binary-reorder-optimization/" title="iOS二进制重排冷启动优化：原理、实操与反思">https://dcheric.github.io/2026/03/31/ios-binary-reorder-optimization/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/iOS/" rel="tag"><i class="fa fa-tag"></i> iOS</a>
+              <a href="/tags/%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96/" rel="tag"><i class="fa fa-tag"></i> 性能优化</a>
+              <a href="/tags/%E5%86%B7%E5%90%AF%E5%8A%A8/" rel="tag"><i class="fa fa-tag"></i> 冷启动</a>
+              <a href="/tags/%E4%BA%8C%E8%BF%9B%E5%88%B6%E9%87%8D%E6%8E%92/" rel="tag"><i class="fa fa-tag"></i> 二进制重排</a>
+              <a href="/tags/Page-Fault/" rel="tag"><i class="fa fa-tag"></i> Page Fault</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/30/from_runtime_tor_runloop/" rel="prev" title="从Runtime到Runloop">
+                  <i class="fa fa-angle-left"></i> 从Runtime到Runloop
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    <div class="comments utterances-container"></div>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">DCH</span>
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+<script class="next-config" data-name="utterances" type="application/json">{"enable":true,"repo":"DCHEric/DCHEric.github.io","issue_term":"pathname","theme":"preferred-color-scheme","label":"comment"}</script>
+<script src="/js/third-party/comments/utterances.js" defer></script>
+<script src="/js/darkmode-toggle.js"></script>
+
+</body>
+</html>

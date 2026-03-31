@@ -974,6 +974,10 @@ pre code {
     transform: translate(1pt, -2pt) rotate(-1deg);
   }
 }
+.mermaid {
+  margin-bottom: 20px;
+  text-align: center;
+}
 .post-body .note {
   border-radius: 3px;
   margin-bottom: 20px;
@@ -1477,7 +1481,7 @@ pre code {
     vertical-align: middle;
   }
   .links-of-author a::before {
-    background: #b6cc78;
+    background: #cdffa3;
     display: inline-block;
     margin-right: 3px;
     transform: translateY(-2px);
@@ -3612,4 +3616,58 @@ header.header {
 .copy-btn {
   right: 8px !important;
   top: 8px !important;
+}
+/* ================================================
+   隐藏文章标题的链接图标和下划线
+   ================================================ */
+/* 隐藏标题右侧的链接图标 */
+.post-body h1::before,
+.post-body h2::before,
+.post-body h3::before,
+.post-body h4::before,
+.post-body h5::before,
+.post-body h6::before,
+.post-body h1::after,
+.post-body h2::after,
+.post-body h3::after,
+.post-body h4::after,
+.post-body h5::after,
+.post-body h6::after {
+  display: none !important;
+}
+/* 移除标题的下划线和边框 */
+.post-body h1,
+.post-body h2,
+.post-body h3,
+.post-body h4,
+.post-body h5,
+.post-body h6 {
+  border: none !important;
+  border-bottom: none !important;
+  padding-bottom: 0 !important;
+}
+/* 移除标题链接的所有样式 */
+.post-body h1 a,
+.post-body h2 a,
+.post-body h3 a,
+.post-body h4 a,
+.post-body h5 a,
+.post-body h6 a {
+  text-decoration: none !important;
+  border: none !important;
+  color: inherit !important;
+  pointer-events: none !important;
+}
+/* 隐藏 headerlink 类的元素（链接图标） */
+.headerlink {
+  display: none !important;
+}
+/* 移除标题悬停时的样式 */
+.post-body h1:hover,
+.post-body h2:hover,
+.post-body h3:hover,
+.post-body h4:hover,
+.post-body h5:hover,
+.post-body h6:hover {
+  border-bottom: none !important;
 }
