@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: dark)"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"dcheric.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.27.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12,"width":300},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":true,"style":"flat"},"fold":{"enable":false,"height":500},"language":true},"bookmark":{"enable":true,"color":"#222","save":"auto"},"mediumzoom":true,"lazyload":true,"pangu":false,"comments":{"style":"tabs","active":"utterances","storage":true,"lazyload":false,"nav":null,"nav_id":"comments","activeClass":"utterances"},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"path":"/search.xml","localsearch":{"enable":true,"top_n_per_article":1,"unescape":false,"preload":false,"trigger":"auto"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="从 Prompt Engineering 到 Context Engineering 再到 Harness Engineering，这三者不是替代关系，而是同一套 AI 工程系统的三个层次。本文结合实际 coding agent 经验，深入分析为什么在长任务场景里，仅优化提示词远远不够，以及如何搭建一个可运行、可纠错、可追溯的 Agent 运行系统。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI工程范式的三次演化：Prompt Engineering → Context Engineering → Harness Engineering">
+<meta property="og:url" content="https://dcheric.github.io/2026/04/07/ai-engineering-paradigm-evolution/index.html">
+<meta property="og:site_name" content="DCH&#39;s Blog">
+<meta property="og:description" content="从 Prompt Engineering 到 Context Engineering 再到 Harness Engineering，这三者不是替代关系，而是同一套 AI 工程系统的三个层次。本文结合实际 coding agent 经验，深入分析为什么在长任务场景里，仅优化提示词远远不够，以及如何搭建一个可运行、可纠错、可追溯的 Agent 运行系统。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-04-07T02:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-07T02:15:22.531Z">
+<meta property="article:author" content="DCH">
+<meta property="article:tag" content="AI Coding">
+<meta property="article:tag" content="Harness Engineering">
+<meta property="article:tag" content="Context Engineering">
+<meta property="article:tag" content="Prompt Engineering">
+<meta property="article:tag" content="软件工程">
+<meta property="article:tag" content="开发方法论">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://dcheric.github.io/2026/04/07/ai-engineering-paradigm-evolution/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://dcheric.github.io/2026/04/07/ai-engineering-paradigm-evolution/","path":"2026/04/07/ai-engineering-paradigm-evolution/","title":"AI工程范式的三次演化：Prompt Engineering → Context Engineering → Harness Engineering"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI工程范式的三次演化：Prompt Engineering → Context Engineering → Harness Engineering | DCH's Blog</title>
+  
+
+  <script src="/js/third-party/analytics/baidu-analytics.js" defer></script>
+  <script async src="https://hm.baidu.com/hm.js?30591dbd2ce90c91765c7f3e174efc9a"></script>
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/medium-zoom/1.1.0/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lozad.js/1.16.0/lozad.min.js" integrity="sha256-mOFREFhqmHeQbXpK2lp4nA3qooVgACfh88fpJftLBbc=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script><script src="/js/bookmark.js" defer></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/hexo-generator-searchdb/1.5.0/search.js" integrity="sha256-xFC6PJ82SL9b3WkGjFavNiA9gm5z6UBxWPiu4CYjptg=" crossorigin="anonymous" defer></script>
+<script src="/js/third-party/search/local-search.js" defer></script>
+
+
+  <script class="next-config" data-name="mermaid" type="application/json">{"enable":true,"theme":{"light":"default","dark":"dark"},"js":{"url":"https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.10.1/mermaid.min.js","integrity":"sha256-BmQmdWDS8X2OTbrwELWK366LV6escyWhHHe0XCTU/Hk="}}</script>
+  <script src="/js/third-party/tags/mermaid.js" defer></script>
+
+
+
+
+
+  
+
+
+
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quicklink/3.0.1/quicklink.umd.js" integrity="sha256-44BednzIpUeQJcY8qtLyarFu0UCCTbgmWOvaoehiFQQ=" crossorigin="anonymous" defer></script>
+  <script class="next-config" data-name="quicklink" type="application/json">{"enable":true,"home":true,"archive":true,"delay":true,"timeout":3000,"priority":true,"url":"https://dcheric.github.io/2026/04/07/ai-engineering-paradigm-evolution/"}</script>
+  <script src="/js/third-party/quicklink.js" defer></script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">DCH's Blog</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">故乡的樱花开了，该回去看看了</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+      <div class="search-header">
+        <span class="search-icon">
+          <i class="fa fa-search"></i>
+        </span>
+        <div class="search-input-container">
+          <input autocomplete="off" autocapitalize="off" maxlength="80"
+                placeholder="搜索..." spellcheck="false"
+                type="search" class="search-input">
+        </div>
+        <span class="popup-btn-close" role="button">
+          <i class="fa fa-times-circle"></i>
+        </span>
+      </div>
+      <div class="search-result-container">
+        <div class="search-result-icon">
+          <i class="fa fa-spinner fa-pulse fa-5x"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Prompt-Engineering%EF%BC%9A%E5%85%88%E6%8A%8A%E4%BB%BB%E5%8A%A1%E8%AF%B4%E6%B8%85%E6%A5%9A"><span class="nav-number">1.</span> <span class="nav-text">1. Prompt Engineering：先把任务说清楚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Context-Engineering%EF%BC%9A%E5%86%B3%E5%AE%9A%E6%A8%A1%E5%9E%8B%E5%9C%A8%E5%85%B3%E9%94%AE%E6%97%B6%E5%88%BB%E8%83%BD%E7%9C%8B%E5%88%B0%E4%BB%80%E4%B9%88"><span class="nav-number">2.</span> <span class="nav-text">2. Context Engineering：决定模型在关键时刻能看到什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-RAG%EF%BC%9A%E8%A7%A3%E5%86%B3%E3%80%8C%E6%A8%A1%E5%9E%8B%E4%B8%8D%E7%9F%A5%E9%81%93%E7%9A%84%E7%A7%81%E6%9C%89%E7%9F%A5%E8%AF%86%E5%BA%93%E3%80%8D"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 RAG：解决「模型不知道的私有知识库」</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Tools%EF%BC%9A%E8%A7%A3%E5%86%B3%E3%80%8C%E6%A8%A1%E5%9E%8B%E4%B8%8D%E7%9F%A5%E9%81%93%E5%A4%96%E9%83%A8%E4%B8%96%E7%95%8C%EF%BC%8C%E4%B9%9F%E4%B8%8D%E8%83%BD%E7%9B%B4%E6%8E%A5%E8%A1%8C%E5%8A%A8%E3%80%8D"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 Tools：解决「模型不知道外部世界，也不能直接行动」</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-Memory%EF%BC%9A%E8%A7%A3%E5%86%B3%E3%80%8C%E6%A8%A1%E5%9E%8B%E6%AF%8F%E6%AC%A1%E9%83%BD%E5%83%8F%E7%AC%AC%E4%B8%80%E6%AC%A1%E8%A7%81%E4%BD%A0%E3%80%8D"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 Memory：解决「模型每次都像第一次见你」</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-%E4%B8%BA%E4%BB%80%E4%B9%88%E5%8F%AA%E8%A1%A5%E4%B8%8A%E4%B8%8B%E6%96%87%EF%BC%8C%E5%BE%88%E5%A4%9A-Agent-%E8%BF%98%E6%98%AF%E5%81%9A%E4%B8%8D%E7%A8%B3"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 为什么只补上下文，很多 Agent 还是做不稳</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Harness-Engineering%EF%BC%9A%E6%8A%8A%E6%A8%A1%E5%9E%8B%E6%94%BE%E8%BF%9B%E4%B8%80%E4%B8%AA%E5%8F%AF%E8%BF%90%E8%A1%8C%E3%80%81%E5%8F%AF%E7%BA%A0%E9%94%99%E3%80%81%E5%8F%AF%E8%BF%BD%E6%BA%AF%E7%9A%84%E7%B3%BB%E7%BB%9F"><span class="nav-number">3.</span> <span class="nav-text">3. Harness Engineering：把模型放进一个可运行、可纠错、可追溯的系统</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-%E7%A1%AE%E5%AE%9A%E4%BB%BB%E5%8A%A1%E7%9B%AE%E6%A0%87"><span class="nav-number">3.1.</span> <span class="nav-text">3.1 确定任务目标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-%E6%9A%B4%E9%9C%B2%E9%9A%90%E6%80%A7%E7%9F%A5%E8%AF%86%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E9%BB%98%E8%AE%A4%E6%A8%A1%E5%9E%8B%E8%87%AA%E5%B7%B1%E4%BC%9A%E6%87%82"><span class="nav-number">3.2.</span> <span class="nav-text">3.2 暴露隐性知识，而不是默认模型自己会懂</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-%E7%BB%99%E8%B6%B3%E5%A4%9F%E4%BD%86%E4%B8%8D%E8%BF%87%E8%BD%BD%E7%9A%84%E5%B7%A5%E5%85%B7"><span class="nav-number">3.3.</span> <span class="nav-text">3.3 给足够但不过载的工具</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-%E6%8F%90%E4%BE%9B%E5%8F%AF%E8%A7%82%E6%B5%8B%E7%9A%84%E5%8F%8D%E9%A6%88%E5%9B%9E%E8%B7%AF"><span class="nav-number">3.4.</span> <span class="nav-text">3.4 提供可观测的反馈回路</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-%E6%8F%90%E4%BE%9B%E6%B8%90%E8%BF%9B%E5%BC%8F%E6%8A%AB%E9%9C%B2%E7%9A%84%E8%AE%B0%E5%BD%95%E7%B3%BB%E7%BB%9F"><span class="nav-number">3.5.</span> <span class="nav-text">3.5 提供渐进式披露的记录系统</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-%E5%9B%9E%E6%83%B3%E6%88%91%E5%9C%A8%E5%81%9A-Debug-Agent-%E6%97%B6%E7%9A%84%E7%BB%8F%E9%AA%8C"><span class="nav-number">4.</span> <span class="nav-text">4. 回想我在做 Debug Agent 时的经验</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-%E7%AC%AC%E4%B8%80%E7%89%88%EF%BC%9A%E5%8F%AA%E6%9C%89-prompt%E3%80%81%E9%97%AE%E9%A2%98%E6%8F%8F%E8%BF%B0%E3%80%81%E6%97%A5%E5%BF%97%E5%92%8C%E4%BB%93%E5%BA%93"><span class="nav-number">4.1.</span> <span class="nav-text">4.1 第一版：只有 prompt、问题描述、日志和仓库</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-%E6%88%91%E5%BD%93%E6%97%B6%E7%9A%84%E8%AF%AF%E5%88%A4%EF%BC%9A%E5%85%88%E5%8E%BB%E5%81%9A%E4%BB%A3%E7%A0%81-RAG"><span class="nav-number">4.2.</span> <span class="nav-text">4.2 我当时的误判：先去做代码 RAG</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-%E7%9C%9F%E6%AD%A3%E8%B5%B7%E4%BD%9C%E7%94%A8%E7%9A%84%E6%94%B9%E5%8A%A8%EF%BC%9A%E7%BB%99%E5%AE%83%E4%B8%80%E4%B8%AA%E5%B4%A9%E6%BA%83%E5%88%86%E6%9E%90%E6%8A%80%E8%83%BD"><span class="nav-number">4.3.</span> <span class="nav-text">4.3 真正起作用的改动：给它一个崩溃分析技能</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-4-%E8%BF%99%E4%B8%AA%E6%A1%88%E4%BE%8B%E9%87%8C%EF%BC%8C%E4%B8%89%E5%B1%82%E5%88%86%E5%88%AB%E5%8F%91%E6%8C%A5%E4%BA%86%E4%BB%80%E4%B9%88%E4%BD%9C%E7%94%A8"><span class="nav-number">4.4.</span> <span class="nav-text">4.4 这个案例里，三层分别发挥了什么作用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93%EF%BC%9AAgent-%E6%97%B6%E4%BB%A3%EF%BC%8C%E9%87%8D%E5%BF%83%E5%9C%A8%E3%80%8CHarness%E3%80%8D"><span class="nav-number">5.</span> <span class="nav-text">总结：Agent 时代，重心在「Harness」</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="DCH"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">DCH</p>
+  <div class="site-description" itemprop="description">专注于iOS、RN、大前端和AI Agent技术</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">5</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">20</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/DCHEric" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;DCHEric" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://x.com/DCHtigerr" title="X → https:&#x2F;&#x2F;x.com&#x2F;DCHtigerr" rel="noopener me" target="_blank"><i class="fab fa-x-twitter fa-fw"></i>X</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+        <div class="back-to-top animated" role="button" aria-label="返回顶部">
+          <i class="fa fa-arrow-up"></i>
+          <span>0%</span>
+        </div>
+    </div>
+
+    
+    <div class="sidebar-inner sidebar-blogroll">
+      <div class="links-of-blogroll animated">
+        <div class="links-of-blogroll-title"><i class="fa fa-bars fa-fw"></i>
+          链接
+        </div>
+        <ul class="links-of-blogroll-list">
+            <li class="links-of-blogroll-item">
+              <a href="/" title="&#x2F;">首页</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/about/" title="&#x2F;about&#x2F;">关于</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/tags/" title="&#x2F;tags&#x2F;">标签</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/categories/" title="&#x2F;categories&#x2F;">分类</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/archives/" title="&#x2F;archives&#x2F;">归档</a>
+            </li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://dcheric.github.io/2026/04/07/ai-engineering-paradigm-evolution/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="DCH">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="DCH's Blog">
+      <meta itemprop="description" content="专注于iOS、RN、大前端和AI Agent技术">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI工程范式的三次演化：Prompt Engineering → Context Engineering → Harness Engineering | DCH's Blog">
+      <meta itemprop="description" content="从 Prompt Engineering 到 Context Engineering 再到 Harness Engineering，这三者不是替代关系，而是同一套 AI 工程系统的三个层次。本文结合实际 coding agent 经验，深入分析为什么在长任务场景里，仅优化提示词远远不够，以及如何搭建一个可运行、可纠错、可追溯的 Agent 运行系统。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI工程范式的三次演化：Prompt Engineering → Context Engineering → Harness Engineering
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+      
+
+      <time title="创建时间：2026-04-07 10:00:00 / 修改时间：10:15:22" itemprop="dateCreated datePublished" datetime="2026-04-07T10:00:00+08:00">2026-04-07</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/VibeCoding%E6%96%B9%E6%B3%95%E8%AE%BA/" itemprop="url" rel="index"><span itemprop="name">VibeCoding方法论</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+            <div class="post-description">从 Prompt Engineering 到 Context Engineering 再到 Harness Engineering，这三者不是替代关系，而是同一套 AI 工程系统的三个层次。本文结合实际 coding agent 经验，深入分析为什么在长任务场景里，仅优化提示词远远不够，以及如何搭建一个可运行、可纠错、可追溯的 Agent 运行系统。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>最近有一个概念「Harness Engineering」开始兴起，看到很多堆砌概念的文章，读了没什么用。</p>
+<p>结合实际经历来理解了一下。总的来说，结论是：如果目标只是让模型在一轮对话里回答得更像样，Prompt Engineering 依然重要；但如果目标变成「让 Agent 连续几十分钟完成一个真实任务」，只优化提示词通常是不够的。很多失败并不是模型不会写，而是它不知道该看什么、能用什么、错了以后怎样自我校正。它缺少了一些运行的环境和良好的规范。</p>
+<span id="more"></span>
+
+<p>这篇文章想回答三个更具体的问题：</p>
+<ul>
+<li>Prompt Engineering、Context Engineering、Harness Engineering 分别在解决什么问题？</li>
+<li>为什么在 coding agent 场景里，后者会越来越重要？</li>
+<li>当 Agent 表现不好时，我应该怎么做？</li>
+</ul>
+<p>首先，结论是：<strong>这三者不是替代关系，而是同一套 AI 工程系统的三个层次。</strong></p>
+<ul>
+<li>Prompt 决定你如何发出任务</li>
+<li>Context 决定模型在关键时刻能看到什么</li>
+<li>Harness 决定模型在什么运行机制里完成任务</li>
+</ul>
+<p>它们的外延其实是越来越大的。</p>
+<p>当我们的目标从「答对一道题」变成「稳定完成一段工作流」，系统重心就会自然外移。我们会先发现优化 prompt 不够，再发现只补上下文也不够，最后不得不处理运行环境、反馈回路、权限边界和记录系统这些更工程化的问题。</p>
+<p>所以，这篇文章表面上是在讲三次演化，真正落点其实是一个更实用的启示：<strong>在 coding agent 场景里，很多问题并不是「prompt 还不够好」，而是我们没有把系统搭好。</strong>（我理解的 harness 工程的核心思想）</p>
+<h2 id="1-Prompt-Engineering：先把任务说清楚"><a href="#1-Prompt-Engineering：先把任务说清楚" class="headerlink" title="1. Prompt Engineering：先把任务说清楚"></a>1. Prompt Engineering：先把任务说清楚</h2><p>大多数人第一次接触 LLM，都是从 prompt 开始的。打开 ChatGPT、DeepSeek 或豆包，在输入框里写一句话，模型给你一段回答。比如，在输入框输入文字：「中国的首都是哪里」答：「北京」。这种交互方式诞生了大量的 ChatBot。它将模型的能力封装成了一个更高效的知识库、数据库、搜索引擎产品。这个阶段，AI 的核心是问答任务，即如何更好的输出用户想要的答案。</p>
+<p>这一阶段最常见的方法，基本都在解决同一件事：如何让模型更准确地理解我们的意图。所以大家都是在研究提示词技巧：</p>
+<ul>
+<li>设定身份、背景、行为的格式化方法</li>
+<li>举例子给模型，所谓 one shot&#x2F;few shot</li>
+<li>让模型一步步思考的思维链方法</li>
+<li>让模型推理行动观测的 ReAct 方法（这里已经初步演进到 agent 的概念了）</li>
+</ul>
+<p>严格一点说，Prompt Engineering 不只是「写一句更有效的话」，还包括测试、评估和迭代。它解决的是输入表达问题。</p>
+<p>但它的边界也很明确：</p>
+<ul>
+<li>它不能凭空给模型补进我们的私域知识</li>
+<li>它不能让模型知道今天的外部世界发生了什么</li>
+<li>它不能天然解决跨轮对话的持续记忆</li>
+<li>它也不能代替权限控制、执行环境和错误恢复机制</li>
+</ul>
+<p>我们对 LLM 的期待不是一个高级的数据库查询式的问答，我们希望它能处理上述事情。实际上，我们是在期待一个 Agent，而 Agent 的任务是多步执行。</p>
+<h2 id="2-Context-Engineering：决定模型在关键时刻能看到什么"><a href="#2-Context-Engineering：决定模型在关键时刻能看到什么" class="headerlink" title="2. Context Engineering：决定模型在关键时刻能看到什么"></a>2. Context Engineering：决定模型在关键时刻能看到什么</h2><p>模型是通过上下文窗口来工作的，prompt 是其中的一部分。当任务从问答变成执行，问题的重心就从「如何提问」迁移成「如何组织上下文」。</p>
+<p>这里的上下文，不只是 system prompt。凡是会进入模型视野、影响其下一步决策的信息，都可以算上下文，例如：</p>
+<ul>
+<li>提示词</li>
+<li>用户输入</li>
+<li>工具定义</li>
+<li>工具返回结果</li>
+<li>历史对话</li>
+<li>检索出的知识片段</li>
+<li>长短期记忆</li>
+<li>当前任务状态</li>
+</ul>
+<p>那么如何才能有效的组织这些信息呢？还是机械的将它们填充进来吗？肯定不是。</p>
+<h3 id="2-1-RAG：解决「模型不知道的私有知识库」"><a href="#2-1-RAG：解决「模型不知道的私有知识库」" class="headerlink" title="2.1 RAG：解决「模型不知道的私有知识库」"></a>2.1 RAG：解决「模型不知道的私有知识库」</h3><p>私域知识、产品文档、内部规范、历史记录，往往比上下文窗口大得多，不能整包塞给模型。这时候就需要先查，再把最相关的片段喂进去。</p>
+<p>RAG 的价值在于：它尽量让检索结果和任务语义相关，而不是只做字面匹配。比如同样搜索「苹果」，一斤苹果 5 块钱和一部苹果手机 8000 块都可能命中，但对当前任务有帮助的内容其实完全不同。</p>
+<p>不过，RAG 的发展也是波折的，中间火热的时候，说「RAG for everything」，模型上下文窗口一长，微调技术成熟的时候，又说「RAG is dead」。在实际的企业知识问答实践中，RAG 也总会遇到各种问题被抱怨。</p>
+<p>但从我的观察来看：</p>
+<ul>
+<li>在企业知识问答、流程文档检索、内部规范辅助这类场景里，RAG 仍然很重要</li>
+<li>在代码仓库导航、局部文件定位这类强结构化场景里，Grep、Glob、Read 这类直接操作文件系统的方式，往往比向量检索更直接</li>
+</ul>
+<p>不是 RAG 消失了，而是不同任务需要不同的增强方式。</p>
+<p>我自己做 debug agent 时就踩过这个坑。我最初尝试过把代码仓库做索引，再让 Agent 通过语义检索去找崩溃相关代码，结果召回率很低。原因是很多调试任务依赖的不是「语义相似」，而是术语、符号名、文件路径、调用链和历史改动，这些信息更适合用 grep、日志关键字和 git 记录去逼近。后来直接调用 claude code sdk，准确率一下就上去了。</p>
+<h3 id="2-2-Tools：解决「模型不知道外部世界，也不能直接行动」"><a href="#2-2-Tools：解决「模型不知道外部世界，也不能直接行动」" class="headerlink" title="2.2 Tools：解决「模型不知道外部世界，也不能直接行动」"></a>2.2 Tools：解决「模型不知道外部世界，也不能直接行动」</h3><p>如果没有工具，LLM 很像一个「缸中之脑」。它能推理，但不知道现在几点，不知道今天发生了什么，也不能亲手执行动作。</p>
+<p>所以我们给模型接工具：</p>
+<ul>
+<li>要知道时间，就接时间工具</li>
+<li>要知道现实世界信息，就接搜索或接口</li>
+<li>要改文件、跑命令、查日志，就接代码与系统工具</li>
+</ul>
+<p>这条路线持续在进化。早期很多系统靠正则匹配模型输出，再映射到某个函数；后来发展到更稳定的 function calling；再往后，为了把工具能力从某个模型服务或某个聊天客户端里解耦出来，又出现了像 MCP 这类协议层抽象。</p>
+<p>工具一多，新的问题又来了：工具描述本身会占上下文，选择错误的工具也会带来执行成本。所以现在不少系统开始做按需加载，把工具和经验封装成 skills，避免一上来把所有能力都塞给模型。</p>
+<h3 id="2-3-Memory：解决「模型每次都像第一次见你」"><a href="#2-3-Memory：解决「模型每次都像第一次见你」" class="headerlink" title="2.3 Memory：解决「模型每次都像第一次见你」"></a>2.3 Memory：解决「模型每次都像第一次见你」</h3><p>LLM 天生不是持续有状态的。当前轮次的推理，不会自动继承上一次对话的内部状态。</p>
+<p>最简单的做法，就是把之前的对话一起放回上下文。这确实有效，而且现在依然是最常见的办法。但对话一长，窗口就会被迅速吃满，于是我们又不得不面对两个更细的问题：</p>
+<ul>
+<li>哪些历史信息应该保留</li>
+<li>哪些信息应该压缩、摘要或者外置存储</li>
+</ul>
+<p>短期记忆解决连续对话，长期记忆解决跨任务偏好、固定约束和��史决策。到这里，会发现 Context Engineering 已经不是「多加几个字段」，而是在做信息编排。</p>
+<h3 id="2-4-为什么只补上下文，很多-Agent-还是做不稳"><a href="#2-4-为什么只补上下文，很多-Agent-还是做不稳" class="headerlink" title="2.4 为什么只补上下文，很多 Agent 还是做不稳"></a>2.4 为什么只补上下文，很多 Agent 还是做不稳</h3><p>上下文问题解决的是「模型看到什么」，但它不直接解决下面这些问题：</p>
+<ul>
+<li>它会不会误用高风险工具</li>
+<li>它改完代码以后如何验证</li>
+<li>它失败了以后如何重试或回滚</li>
+<li>它什么时候应该停下来汇报，而不是继续乱做</li>
+<li>它怎样在长任务里留下可以追溯的过程记录</li>
+</ul>
+<p>这些问题一出来，视角就必须继续外扩。我们研究的不再只是上下文，而是整个运行系统。这就是我理解的 Harness Engineering。</p>
+<h2 id="3-Harness-Engineering：把模型放进一个可运行、可纠错、可追溯的系统"><a href="#3-Harness-Engineering：把模型放进一个可运行、可纠错、可追溯的系统" class="headerlink" title="3. Harness Engineering：把模型放进一个可运行、可纠错、可追溯的系统"></a>3. Harness Engineering：把模型放进一个可运行、可纠错、可追溯的系统</h2><p>如何理解 harness，我想到一个合适的例子。一个新入职的经验丰富的工程师，我们需要怎样才能保证它的产出呢？</p>
+<ul>
+<li>给他配好的电脑</li>
+<li>告诉他规则和权利</li>
+<li>给它工作用的软件和运行环境</li>
+<li>告诉它本领域的知识</li>
+</ul>
+<p>同理，如果把一个能力不错的 Agent 看作新入职的工程师，那么 prompt 只是任务说明，context 只是你递给他的材料，而 <strong>harness 更像他所处的工作环境</strong>。</p>
+<p>真正决定他能不能稳定交付的，通常不是「会不会写代码」这一件事，而是下面这些工程条件是否存在：</p>
+<ul>
+<li>有没有明确的目标、边界和停止条件</li>
+<li>有没有合适的权限和运行环境</li>
+<li>有没有足够的领域知识和工具入口</li>
+<li>有没有日志、测试、页面反馈这类可观测信号</li>
+<li>有没有文档、记录和版本系统让它在长任务里不至于失忆</li>
+</ul>
+<p>所以，Harness Engineering 是在回答一个问题：<strong>如何把模型放进一个能持续做事的工程闭环环境里。</strong></p>
+<h3 id="3-1-确定任务目标"><a href="#3-1-确定任务目标" class="headerlink" title="3.1 确定任务目标"></a>3.1 确定任务目标</h3><p>很多 Agent 失控，不是因为它听不懂，而是因为系统没有给它清晰的「完成条件」和「禁止动作」。</p>
+<p>比如在代码任务里，至少要让它知道：</p>
+<ul>
+<li>什么叫完成</li>
+<li>哪些目录、分支、环境不能碰</li>
+<li>失败后是继续尝试、回退，还是停下来请求确认</li>
+<li>什么时候必须先汇报，再进入下一步</li>
+</ul>
+<p>这类约束看起来不像 AI 技术，实际上却直接决定产出质量。因为 Agent 一旦进入多步执行，没有约束的系统，天然更容易出现过度行动。这和对待人类程序员是一样的。</p>
+<h3 id="3-2-暴露隐性知识，而不是默认模型自己会懂"><a href="#3-2-暴露隐性知识，而不是默认模型自己会懂" class="headerlink" title="3.2 暴露隐性知识，而不是默认模型自己会懂"></a>3.2 暴露隐性知识，而不是默认模型自己会懂</h3><p>实践里，coding agent 最常见的跑偏原因，是它不知道团队那些「默认不言自明」的规则导致的。</p>
+<p>比如「做一个上新的功能」，在人类团队里可能隐含了很多前置约束：</p>
+<ul>
+<li>哪些指标必须埋点</li>
+<li>哪些埋点字段有历史兼容要求</li>
+<li>哪些 UI 改动要同步改文案和活动配置</li>
+<li>哪个目录下的脚本才是正式发布链路</li>
+</ul>
+<p>这些信息的密度非常高，如果没有清晰的呈现出来，agent 的幻觉就会将其放大。</p>
+<p>所以我更愿意把这件事理解成：<strong>不要只给 Agent 一个需求，而要补给它「一个新人第一周会被老员工口头交代的那些东西」。</strong></p>
+<h3 id="3-3-给足够但不过载的工具"><a href="#3-3-给足够但不过载的工具" class="headerlink" title="3.3 给足够但不过载的工具"></a>3.3 给足够但不过载的工具</h3><p>工具越多不是越好，太多工具会带来两个副作用：</p>
+<ul>
+<li>模型选择成本变高</li>
+<li>工具说明本身开始挤占上下文</li>
+</ul>
+<p>所以更合理的做法，往往不是「无限加工具」，而是让工具可发现、可按需加载。很多优秀的 coding agent 其实都不追求「为每个动作发明一个专用工具」，而是优先提供一小组通用能力，例如：</p>
+<ul>
+<li>Read</li>
+<li>Write</li>
+<li>Grep</li>
+<li>Glob</li>
+<li>Bash</li>
+</ul>
+<p>典型的如 Claude Code、pi-mono。这套设计的好处，是看似给了很少的工具，但实际覆盖面很大。前四个让它高效操作代码和文件，Bash 则提供兜底能力。剩下的空间，交给具体项目里的 CLI、脚本和工作流。</p>
+<p>隐含的逻辑是「我相信 Agent 足够的智能，可以找到自己合适的工具」。</p>
+<h3 id="3-4-提供可观测的反馈回路"><a href="#3-4-提供可观测的反馈回路" class="headerlink" title="3.4 提供可观测的反馈回路"></a>3.4 提供可观测的反馈回路</h3><p>没有反馈，Agent 就很难自我纠错。它做了一步动作，却不知道结果好坏，下一步只能继续猜。</p>
+<p>在软件开发里，最典型的反馈源包括：</p>
+<ul>
+<li>测试结果</li>
+<li>lint 和类型检查（很多 coding agent 工具会搭 LSP）</li>
+<li>结构化日志</li>
+<li>页面或接口的真实运行输出</li>
+<li>调试信息、浏览器行为、硬件或串口回传</li>
+</ul>
+<p>很多人觉得 Agent 输出质量差，第一反应是继续改 prompt 尝试。可如果系统根本没有把这些反馈暴露出来，再好的 prompt 也无法替代观测能力。一个不会看结果的 Agent，很难进入稳定迭代。</p>
+<p>从另一个层面说，这也是某些岗位的壁垒所在。越是依赖真实世界给予反馈的，越晚被替代。比如嵌入式开发，需要通过调试器等将信号接回到 agent 系统。反之则越快被替代，今年已经开始出现前端部门被整锅端掉了。</p>
+<h3 id="3-5-提供渐进式披露的记录系统"><a href="#3-5-提供渐进式披露的记录系统" class="headerlink" title="3.5 提供渐进式披露的记录系统"></a>3.5 提供渐进式披露的记录系统</h3><p>上下文窗口很宝贵，但长程任务天然需要大量记录。人类做项目时也不是把全部细节背在脑子里，而是把信息外化到文档、代码、日志和版本历史里，需要时再检索回来。</p>
+<p>Agent 也一样。好的记录系统，不是把百科全书塞进 AGENTS.md，而是给它一张地图，再把细节拆到真正可维护的位置：</p>
+<ul>
+<li><code>AGENTS.md</code> 负责告诉它规则、入口和知识分布</li>
+<li><code>docs/</code> 负责沉淀领域文档、流程说明、排障记录</li>
+<li><code>git</code> 负责保存每一步代码变化和提交语义</li>
+</ul>
+<p>这样做有两个直接好处：</p>
+<ul>
+<li>上下文不需要永久背着所有细节</li>
+<li>需要追溯时，可以沿着文档和版本历史反查</li>
+</ul>
+<p>从这个角度看，<strong>git 本身就是很适合 Agent 的外部记忆</strong>。它天然和代码关联，又鼓励小步迭代，检索成本也低。</p>
+<p>这块经验来自 OpenAI 在 2026 年 2 月 11 日发布的文章《工程技术：在智能体优先的世界中利用 Codex》，他们后来不再把 AGENTS.md 当百科全书，而是把它当作内容目录，真正的知识沉淀在结构化的 <code>docs/</code> 里。这个判断和我自己的实践是一致的：长任务需要的是可检索的记录系统，而不是一段越来越长的总提示词。</p>
+<p>我在做一个语音 agent vixio 工程时，对「记录系统」还有一个更强的感受：如果不强制 Agent 把关键决策写下来，长任务一定会越来越漂。</p>
+<p>我的做法是：</p>
+<ul>
+<li>每次开始实现前，先要求 Agent 完成设计并存到文档里</li>
+<li>后续实现一旦有更新，必须同步更新这份设计文档</li>
+<li>后面遇到关联任务时，要求 Agent 先回看并引用这份文档，再继续实现</li>
+</ul>
+<p>回想起来，这件事看起来像文档习惯，实际上是 harness 的一部分。因为它解决的不是「当前回答得好不好」，而是「多轮、多阶段任务里，Agent 能不能保留稳定的项目记忆」。</p>
+<p>长期任务里的记忆，不能只寄希望于上下文窗口自动维持，而要外置到文档、git、任务记录这些系统里。窗口里放的是当前阶段最相关的片段，真正的长期记忆应该在窗口外有可检索的落点。</p>
+<h2 id="4-回想我在做-Debug-Agent-时的经验"><a href="#4-回想我在做-Debug-Agent-时的经验" class="headerlink" title="4. 回想我在做 Debug Agent 时的经验"></a>4. 回想我在做 Debug Agent 时的经验</h2><h3 id="4-1-第一版：只有-prompt、问题描述、日志和仓库"><a href="#4-1-第一版：只有-prompt、问题描述、日志和仓库" class="headerlink" title="4.1 第一版：只有 prompt、问题描述、日志和仓库"></a>4.1 第一版：只有 prompt、问题描述、日志和仓库</h3><p>一般解决一个 BUG，都是如下的步骤，给出任务要求：</p>
+<blockquote>
+<p>解决这个崩溃问题。</p>
+</blockquote>
+<p>然后补上三类材料：</p>
+<ol>
+<li>问题描述</li>
+<li>崩溃日志</li>
+<li>代码仓库</li>
+</ol>
+<p>从「信息已经不少」的角度看，这似乎已经够了。但实际效果很差。Agent 会执行很久，读很多文件，尝试很多方向，却很难稳定定位到真正相关的代码段。它不是完全不能做事，而是一直在低效搜索。最主要的问题在于：<strong>不稳定</strong>。能不能找到问题点所在，完全看运气。最典型的就是，找崩溃问题，找到 memory 空指针，然后就围绕着这个空指针一直去自我证明。实际上，这里不会空指针，只是写法没有那么规范，导致它容易误判。</p>
+<p>这时候如果只从 Prompt Engineering 的角度思考，很容易得出一个错误结论：是不是 prompt 还不够细？</p>
+<h3 id="4-2-我当时的误判：先去做代码-RAG"><a href="#4-2-我当时的误判：先去做代码-RAG" class="headerlink" title="4.2 我当时的误判：先去做代码 RAG"></a>4.2 我当时的误判：先去做代码 RAG</h3><p>我第一反应其实不是做 harness，而是继续补 context。我试过把代码做索引，让 Agent 通过语义检索找与崩溃相关的代码。</p>
+<p>这一步没有带来预期收益，核心问题是<strong>召回率很低</strong>。</p>
+<p>调试类任务和知识问答不太一样。很多关键线索并不体现为自然语言语义相近，而体现为：</p>
+<ul>
+<li>崩溃堆栈里的特定符号</li>
+<li>日志中的关键字</li>
+<li>仓库里的历史术语</li>
+<li>某次改动引入的调用链变化</li>
+</ul>
+<p>也就是说，这个问题表面上像「信息不够」，本质上却是「信息组织方式不对」。代码语义检索在这里不是完全没用，但不是最有效的入口。</p>
+<h3 id="4-3-真正起作用的改动：给它一个崩溃分析技能"><a href="#4-3-真正起作用的改动：给它一个崩溃分析技能" class="headerlink" title="4.3 真正起作用的改动：给它一个崩溃分析技能"></a>4.3 真正起作用的改动：给它一个崩溃分析技能</h3><p>后面效果明显改善，是因为我不再继续堆 prompt，而是补了一套更接近工程经验的运行支架。</p>
+<p>我给 Agent 增加了一个「崩溃分析技能」，里面不是抽象原则，而是非常具体的工作方法：</p>
+<ul>
+<li>遇到这类崩溃，先搜哪些关键字</li>
+<li>应该优先调用电脑上的哪个分析工具</li>
+<li>可以参考一份过去解决过的类似问题分析</li>
+<li>遇到术语不理解时，要通过 git 记录理解术语含义，并反查对应代码段</li>
+</ul>
+<p>这次改动以后，执行效果就明显好了很多。因为 Agent 不再是在整个仓库里盲目游走，而是开始沿着一条更像资深工程师排障的路径推进。</p>
+<p>这件事对我最大的提醒是：<strong>很多时候，Agent 缺的不是「再解释一遍任务」，而是「给它一条可执行的调查路径」。</strong></p>
+<h3 id="4-4-这个案例里，三层分别发挥了什么作用"><a href="#4-4-这个案例里，三层分别发挥了什么作用" class="headerlink" title="4.4 这个案例里，三层分别发挥了什么作用"></a>4.4 这个案例里，三层分别发挥了什么作用</h3><p>如果用本文的三层框架回看这次调试过程，大概可以这样归因：</p>
+<ul>
+<li><strong>Prompt</strong> 负责定义目标，比如「解决这个崩溃问题」</li>
+<li><strong>Context</strong> 负责提供材料，比如日志、代码仓库、过去案例和关键字</li>
+<li><strong>Harness</strong> 负责把排查流程固定下来，让它知道先做什么、用什么工具、如何通过 git 和记忆系统持续逼近答案</li>
+</ul>
+<p>实际上，它能成功运行分析工具，也是我实现准备好了运行环境。也正因为这样，我现在对很多 Agent 失败场景的第一反应，已经不是「把 prompt 再写长一点」，而是先问一句：<strong>它到底缺的是目标表达、任务材料，还是工程支架？</strong></p>
+<h2 id="总结：Agent-时代，重心在「Harness」"><a href="#总结：Agent-时代，重心在「Harness」" class="headerlink" title="总结：Agent 时代，重心在「Harness」"></a>总结：Agent 时代，重心在「Harness」</h2><p>Prompt Engineering 解决的是如何把任务说明白，Context Engineering 解决的是如何把关键信息摆到模型眼前，Harness Engineering 解决的是如何让模型在真实环境里稳定做事。</p>
+<p>三者并不是谁取代谁，而是抽象层次一层层向外扩展。任务越接近真实生产，后两者的重要性就越高。</p>
+<p>模型能力越来越强，它所需要更多的可能是「给他一个自由发挥的舞台」，人类需要来协助它搭建舞台。而不是反过来，人类强烈的干预它的行为，却不给予它帮助。</p>
+<p>如果你用了顶级模型，但 vibe coding 效果不好，大概率不是模型不够聪明，而是还没有给模型提供足够好的运行环境，从而充分发挥它的能力。</p>
+<hr>
+<p>参考：</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://openai.com/zh-Hans-CN/index/harness-engineering/">Harness engineering: leveraging Codex in an agent-first world - OpenAI</a></li>
+</ul>
+<p>转载自知乎：<a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/2015142041282163260">https://zhuanlan.zhihu.com/p/2015142041282163260</a></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>DCH
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://dcheric.github.io/2026/04/07/ai-engineering-paradigm-evolution/" title="AI工程范式的三次演化：Prompt Engineering → Context Engineering → Harness Engineering">https://dcheric.github.io/2026/04/07/ai-engineering-paradigm-evolution/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/AI-Coding/" rel="tag"><i class="fa fa-tag"></i> AI Coding</a>
+              <a href="/tags/Harness-Engineering/" rel="tag"><i class="fa fa-tag"></i> Harness Engineering</a>
+              <a href="/tags/Context-Engineering/" rel="tag"><i class="fa fa-tag"></i> Context Engineering</a>
+              <a href="/tags/Prompt-Engineering/" rel="tag"><i class="fa fa-tag"></i> Prompt Engineering</a>
+              <a href="/tags/%E8%BD%AF%E4%BB%B6%E5%B7%A5%E7%A8%8B/" rel="tag"><i class="fa fa-tag"></i> 软件工程</a>
+              <a href="/tags/%E5%BC%80%E5%8F%91%E6%96%B9%E6%B3%95%E8%AE%BA/" rel="tag"><i class="fa fa-tag"></i> 开发方法论</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/31/harness-engineering-ai-native-coder/" rel="prev" title="Harness Engineering：AI Coding 时代如何做 AI Native Coder">
+                  <i class="fa fa-angle-left"></i> Harness Engineering：AI Coding 时代如何做 AI Native Coder
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    <div class="comments utterances-container"></div>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">DCH</span>
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+<script class="next-config" data-name="utterances" type="application/json">{"enable":true,"repo":"DCHEric/DCHEric.github.io","issue_term":"pathname","theme":"preferred-color-scheme","label":"comment"}</script>
+<script src="/js/third-party/comments/utterances.js" defer></script>
+<script src="/js/darkmode-toggle.js"></script>
+
+</body>
+</html>
