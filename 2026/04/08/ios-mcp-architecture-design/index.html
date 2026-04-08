@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: dark)"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"dcheric.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.27.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12,"width":300},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":true,"style":"flat"},"fold":{"enable":false,"height":500},"language":true},"bookmark":{"enable":true,"color":"#222","save":"auto"},"mediumzoom":true,"lazyload":true,"pangu":false,"comments":{"style":"tabs","active":"utterances","storage":true,"lazyload":false,"nav":null,"nav_id":"comments","activeClass":"utterances"},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"path":"/search.xml","localsearch":{"enable":true,"top_n_per_article":1,"unescape":false,"preload":false,"trigger":"auto"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="本文介绍一套在 iOS 端落地的 MCP（Model Context Protocol）协议网关架构，它上承 AI&#x2F;语音系统的 JSON-RPC 请求，下驱眼镜硬件、车控、音乐播放、笔记等多个业务域，兼顾了协议标准化、任务调度、多链路回传和会话状态联动。文章从实际代码出发，梳理了四层架构的设计思路，分析了各业务域的执行逻辑，并直面当前代码存在的典型问题，给出可落地的优化方向。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="iOS 端 MCP 协议网关的架构设计：从协议适配到多业务域路由">
+<meta property="og:url" content="https://dcheric.github.io/2026/04/08/ios-mcp-architecture-design/index.html">
+<meta property="og:site_name" content="DCH&#39;s Blog">
+<meta property="og:description" content="本文介绍一套在 iOS 端落地的 MCP（Model Context Protocol）协议网关架构，它上承 AI&#x2F;语音系统的 JSON-RPC 请求，下驱眼镜硬件、车控、音乐播放、笔记等多个业务域，兼顾了协议标准化、任务调度、多链路回传和会话状态联动。文章从实际代码出发，梳理了四层架构的设计思路，分析了各业务域的执行逻辑，并直面当前代码存在的典型问题，给出可落地的优化方向。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-04-08T02:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-08T16:18:12.966Z">
+<meta property="article:author" content="DCH">
+<meta property="article:tag" content="iOS">
+<meta property="article:tag" content="MCP">
+<meta property="article:tag" content="架构设计">
+<meta property="article:tag" content="协议网关">
+<meta property="article:tag" content="AI Agent">
+<meta property="article:tag" content="任务调度">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://dcheric.github.io/2026/04/08/ios-mcp-architecture-design/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://dcheric.github.io/2026/04/08/ios-mcp-architecture-design/","path":"2026/04/08/ios-mcp-architecture-design/","title":"iOS 端 MCP 协议网关的架构设计：从协议适配到多业务域路由"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>iOS 端 MCP 协议网关的架构设计：从协议适配到多业务域路由 | DCH's Blog</title>
+  
+
+  <script src="/js/third-party/analytics/baidu-analytics.js" defer></script>
+  <script async src="https://hm.baidu.com/hm.js?30591dbd2ce90c91765c7f3e174efc9a"></script>
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/medium-zoom/1.1.0/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lozad.js/1.16.0/lozad.min.js" integrity="sha256-mOFREFhqmHeQbXpK2lp4nA3qooVgACfh88fpJftLBbc=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script><script src="/js/bookmark.js" defer></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/hexo-generator-searchdb/1.5.0/search.js" integrity="sha256-xFC6PJ82SL9b3WkGjFavNiA9gm5z6UBxWPiu4CYjptg=" crossorigin="anonymous" defer></script>
+<script src="/js/third-party/search/local-search.js" defer></script>
+
+
+  <script class="next-config" data-name="mermaid" type="application/json">{"enable":true,"theme":{"light":"default","dark":"dark"},"js":{"url":"https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.10.1/mermaid.min.js","integrity":"sha256-BmQmdWDS8X2OTbrwELWK366LV6escyWhHHe0XCTU/Hk="}}</script>
+  <script src="/js/third-party/tags/mermaid.js" defer></script>
+
+
+
+
+
+  
+
+
+
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quicklink/3.0.1/quicklink.umd.js" integrity="sha256-44BednzIpUeQJcY8qtLyarFu0UCCTbgmWOvaoehiFQQ=" crossorigin="anonymous" defer></script>
+  <script class="next-config" data-name="quicklink" type="application/json">{"enable":true,"home":true,"archive":true,"delay":true,"timeout":3000,"priority":true,"url":"https://dcheric.github.io/2026/04/08/ios-mcp-architecture-design/"}</script>
+  <script src="/js/third-party/quicklink.js" defer></script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">DCH's Blog</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">故乡的樱花开了，该回去看看了</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+      <div class="search-header">
+        <span class="search-icon">
+          <i class="fa fa-search"></i>
+        </span>
+        <div class="search-input-container">
+          <input autocomplete="off" autocapitalize="off" maxlength="80"
+                placeholder="搜索..." spellcheck="false"
+                type="search" class="search-input">
+        </div>
+        <span class="popup-btn-close" role="button">
+          <i class="fa fa-times-circle"></i>
+        </span>
+      </div>
+      <div class="search-result-container">
+        <div class="search-result-icon">
+          <i class="fa fa-spinner fa-pulse fa-5x"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#MCP-%E5%8D%8F%E8%AE%AE%E5%9F%BA%E7%A1%80"><span class="nav-number">1.</span> <span class="nav-text">MCP 协议基础</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#MCP-%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">1.1.</span> <span class="nav-text">MCP 是什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%89%E4%B8%AA%E6%A0%B8%E5%BF%83%E8%A7%92%E8%89%B2"><span class="nav-number">1.2.</span> <span class="nav-text">三个核心角色</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E6%B6%88%E6%81%AF%E7%B1%BB%E5%9E%8B"><span class="nav-number">1.3.</span> <span class="nav-text">核心消息类型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#MCP-%E4%B8%8E-Function-Calling-%E7%9A%84%E5%8C%BA%E5%88%AB"><span class="nav-number">1.4.</span> <span class="nav-text">MCP 与 Function Calling 的区别</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%A8%E7%AB%AF%E4%BE%A7%E5%9C%BA%E6%99%AF%E7%9A%84%E5%8F%98%E4%BD%93"><span class="nav-number">1.5.</span> <span class="nav-text">在端侧场景的变体</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%83%8C%E6%99%AF%EF%BC%9A%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81-MCP-%E5%8D%8F%E8%AE%AE%E7%BD%91%E5%85%B3"><span class="nav-number">2.</span> <span class="nav-text">背景：为什么需要 MCP 协议网关</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E6%A8%A1%E5%9D%97%E6%95%B4%E4%BD%93%E8%81%8C%E8%B4%A3"><span class="nav-number">3.</span> <span class="nav-text">一、模块整体职责</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Tool-%E5%85%83%E6%95%B0%E6%8D%AE%E7%AE%A1%E7%90%86%EF%BC%88ToolManager%EF%BC%89"><span class="nav-number">3.1.</span> <span class="nav-text">1. Tool 元数据管理（ToolManager）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BB%BB%E5%8A%A1%E8%B0%83%E5%BA%A6%E4%B8%8E%E6%89%A7%E8%A1%8C%EF%BC%88TaskManager-Executor%EF%BC%89"><span class="nav-number">3.2.</span> <span class="nav-text">2. 任务调度与执行（TaskManager + Executor）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%A0%B8%E5%BF%83%E5%88%86%E5%B1%82%E6%9E%B6%E6%9E%84"><span class="nav-number">4.</span> <span class="nav-text">二、核心分层架构</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC-1-%E5%B1%82%EF%BC%9A%E5%8D%8F%E8%AE%AE%E5%B1%82"><span class="nav-number">4.1.</span> <span class="nav-text">第 1 层：协议层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC-2-%E5%B1%82%EF%BC%9A%E8%B0%83%E5%BA%A6%E5%B1%82"><span class="nav-number">4.2.</span> <span class="nav-text">第 2 层：调度层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC-3-%E5%B1%82%EF%BC%9A%E6%89%A7%E8%A1%8C%E5%B1%82"><span class="nav-number">4.3.</span> <span class="nav-text">第 3 层：执行层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC-4-%E5%B1%82%EF%BC%9A%E8%83%BD%E5%8A%9B%E6%8F%8F%E8%BF%B0%E5%B1%82"><span class="nav-number">4.4.</span> <span class="nav-text">第 4 层：能力描述层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B7%A5%E5%85%B7%E9%9B%86%E5%A6%82%E4%BD%95%E4%BC%A0%E9%80%92%E7%BB%99-AI"><span class="nav-number">4.5.</span> <span class="nav-text">工具集如何传递给 AI</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%A0%B8%E5%BF%83%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84"><span class="nav-number">5.</span> <span class="nav-text">三、核心数据结构</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#MCPRequest%EF%BC%88%E8%AF%B7%E6%B1%82%E6%A8%A1%E5%9E%8B%EF%BC%89"><span class="nav-number">5.1.</span> <span class="nav-text">MCPRequest（请求模型）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#MCPResponse%EF%BC%88%E5%93%8D%E5%BA%94%E6%A8%A1%E5%9E%8B%EF%BC%89"><span class="nav-number">5.2.</span> <span class="nav-text">MCPResponse（响应模型）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#AITask%EF%BC%88%E4%BB%BB%E5%8A%A1%E6%A8%A1%E5%9E%8B%EF%BC%89"><span class="nav-number">5.3.</span> <span class="nav-text">AITask（任务模型）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#JSONRPCArguments%EF%BC%88%E5%8F%82%E6%95%B0%E6%89%BF%E8%BD%BD%E7%BB%93%E6%9E%84%EF%BC%89"><span class="nav-number">5.4.</span> <span class="nav-text">JSONRPCArguments（参数承载结构）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E4%B8%80%E6%9D%A1%E8%AF%B7%E6%B1%82%E7%9A%84%E5%AE%8C%E6%95%B4%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F"><span class="nav-number">6.</span> <span class="nav-text">四、一条请求的完整生命周期</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%AE%8C%E6%95%B4%E7%A4%BA%E4%BE%8B%EF%BC%9Aov-note-write-%E6%8B%8D%E7%85%A7%E5%86%99%E7%AC%94%E8%AE%B0%E5%85%A8%E9%93%BE%E8%B7%AF"><span class="nav-number">7.</span> <span class="nav-text">五、完整示例：ov_note_write 拍照写笔记全链路</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E6%AD%A5%EF%BC%9A%E4%B8%8A%E6%B8%B8%E6%8E%A5%E6%94%B6-MCP-%E8%AF%B7%E6%B1%82"><span class="nav-number">7.1.</span> <span class="nav-text">第一步：上游接收 MCP 请求</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E6%AD%A5%EF%BC%9A%E5%8D%8F%E8%AE%AE%E8%A7%A3%E5%8C%85"><span class="nav-number">7.2.</span> <span class="nav-text">第二步：协议解包</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E6%AD%A5%EF%BC%9A%E8%B0%83%E5%BA%A6%E5%B1%82%E2%80%94%E2%80%94%E5%8E%BB%E9%87%8D%E3%80%81%E5%85%A5%E9%98%9F%E3%80%81%E4%B8%B2%E8%A1%8C%E6%89%A7%E8%A1%8C"><span class="nav-number">7.3.</span> <span class="nav-text">第三步：调度层——去重、入队、串行执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E5%9B%9B%E6%AD%A5%EF%BC%9A%E6%89%A7%E8%A1%8C%E5%B1%82%E2%80%94%E2%80%94%E8%B7%AF%E7%94%B1%E5%88%B0-ov-note-write"><span class="nav-number">7.4.</span> <span class="nav-text">第四步：执行层——路由到 ov_note_write</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%94%E6%AD%A5%EF%BC%9A%E5%93%8D%E5%BA%94%E6%9E%84%E9%80%A0"><span class="nav-number">7.5.</span> <span class="nav-text">第五步：响应构造</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E5%85%AD%E6%AD%A5%EF%BC%9A%E5%93%8D%E5%BA%94%E5%9B%9E%E4%BC%A0"><span class="nav-number">7.6.</span> <span class="nav-text">第六步：响应回传</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%93%BE%E8%B7%AF%E5%85%A8%E8%B2%8C"><span class="nav-number">7.7.</span> <span class="nav-text">链路全貌</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%90%84%E4%B8%9A%E5%8A%A1%E5%9F%9F%E6%B7%B1%E5%BA%A6%E5%88%86%E6%9E%90"><span class="nav-number">8.</span> <span class="nav-text">六、各业务域深度分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#A-%E7%9C%BC%E9%95%9C%E6%8E%A7%E5%88%B6%EF%BC%9A%E8%B7%A8%E9%93%BE%E8%B7%AF%E7%9A%84%E5%AA%92%E4%BD%93%E6%B5%81%E5%A4%84%E7%90%86"><span class="nav-number">8.1.</span> <span class="nav-text">A. 眼镜控制：跨链路的媒体流处理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#B-%E8%BD%A6%E6%8E%A7%EF%BC%9A%E9%95%BF%E4%BA%8B%E5%8A%A1%E7%9A%84%E5%A4%9A%E9%98%B6%E6%AE%B5%E5%9B%9E%E5%8C%85%E8%AE%BE%E8%AE%A1"><span class="nav-number">8.2.</span> <span class="nav-text">B. 车控：长事务的多阶段回包设计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#C-%E9%9F%B3%E4%B9%90%E4%B8%9A%E5%8A%A1%EF%BC%9A%E6%90%9C%E7%B4%A2-%E2%86%92-%E5%8C%B9%E9%85%8D-%E2%86%92-%E6%92%AD%E6%94%BE%E5%8D%A1%E7%9A%84%E5%AE%8C%E6%95%B4%E7%8A%B6%E6%80%81%E9%93%BE"><span class="nav-number">8.3.</span> <span class="nav-text">C. 音乐业务：搜索 → 匹配 → 播放卡的完整状态链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#D-%E7%AC%94%E8%AE%B0%E4%B8%9A%E5%8A%A1%EF%BC%9A%E5%8F%8C%E5%86%99%E8%A1%A5%E5%81%BF%E7%AD%96%E7%95%A5"><span class="nav-number">8.4.</span> <span class="nav-text">D. 笔记业务：双写补偿策略</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%93%8D%E5%BA%94%E6%9E%84%E9%80%A0%E7%9A%84%E5%8F%8C%E5%90%91%E9%80%82%E9%85%8D%E5%99%A8%E6%A8%A1%E5%BC%8F"><span class="nav-number">9.</span> <span class="nav-text">七、响应构造的双向适配器模式</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E4%B8%80%E5%8F%A5%E8%AF%9D%E6%80%BB%E7%BB%93"><span class="nav-number">10.</span> <span class="nav-text">八、一句话总结</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="DCH"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">DCH</p>
+  <div class="site-description" itemprop="description">专注于iOS、RN、大前端和AI Agent技术</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">6</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">25</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/DCHEric" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;DCHEric" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://x.com/DCHtigerr" title="X → https:&#x2F;&#x2F;x.com&#x2F;DCHtigerr" rel="noopener me" target="_blank"><i class="fab fa-x-twitter fa-fw"></i>X</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.xiaohongshu.com/user/profile/5ad5ca7211be103d038c92c5" title="小红书 → https:&#x2F;&#x2F;www.xiaohongshu.com&#x2F;user&#x2F;profile&#x2F;5ad5ca7211be103d038c92c5" rel="noopener me" target="_blank"><i class="fas fa-leaf fa-fw"></i>小红书</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+        <div class="back-to-top animated" role="button" aria-label="返回顶部">
+          <i class="fa fa-arrow-up"></i>
+          <span>0%</span>
+        </div>
+    </div>
+
+    
+    <div class="sidebar-inner sidebar-blogroll">
+      <div class="links-of-blogroll animated">
+        <div class="links-of-blogroll-title"><i class="fa fa-bars fa-fw"></i>
+          链接
+        </div>
+        <ul class="links-of-blogroll-list">
+            <li class="links-of-blogroll-item">
+              <a href="/" title="&#x2F;">首页</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/about/" title="&#x2F;about&#x2F;">关于</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/tags/" title="&#x2F;tags&#x2F;">标签</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/categories/" title="&#x2F;categories&#x2F;">分类</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="/archives/" title="&#x2F;archives&#x2F;">归档</a>
+            </li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://dcheric.github.io/2026/04/08/ios-mcp-architecture-design/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="DCH">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="DCH's Blog">
+      <meta itemprop="description" content="专注于iOS、RN、大前端和AI Agent技术">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="iOS 端 MCP 协议网关的架构设计：从协议适配到多业务域路由 | DCH's Blog">
+      <meta itemprop="description" content="本文介绍一套在 iOS 端落地的 MCP（Model Context Protocol）协议网关架构，它上承 AI&#x2F;语音系统的 JSON-RPC 请求，下驱眼镜硬件、车控、音乐播放、笔记等多个业务域，兼顾了协议标准化、任务调度、多链路回传和会话状态联动。文章从实际代码出发，梳理了四层架构的设计思路，分析了各业务域的执行逻辑，并直面当前代码存在的典型问题，给出可落地的优化方向。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          iOS 端 MCP 协议网关的架构设计：从协议适配到多业务域路由
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-04-08 10:00:00" itemprop="dateCreated datePublished" datetime="2026-04-08T10:00:00+08:00">2026-04-08</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2026-04-09 00:18:12" itemprop="dateModified" datetime="2026-04-09T00:18:12+08:00">2026-04-09</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/iOS%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" itemprop="url" rel="index"><span itemprop="name">iOS架构设计</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+            <div class="post-description">本文介绍一套在 iOS 端落地的 MCP（Model Context Protocol）协议网关架构，它上承 AI/语音系统的 JSON-RPC 请求，下驱眼镜硬件、车控、音乐播放、笔记等多个业务域，兼顾了协议标准化、任务调度、多链路回传和会话状态联动。文章从实际代码出发，梳理了四层架构的设计思路，分析了各业务域的执行逻辑，并直面当前代码存在的典型问题，给出可落地的优化方向。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>最近在做一个智能硬件 + AI Agent 的项目，其中有一块专门负责对接 AI 系统下发的 MCP（Model Context Protocol）请求，把它们路由到眼镜硬件控制、车辆控制、音乐播放、笔记记录等各个业务域。</p>
+<p>这套模块做下来，积累了不少关于「协议网关在移动端落地」的思考，整理出来供大家参考。</p>
+<span id="more"></span>
+
+<h2 id="MCP-协议基础"><a href="#MCP-协议基础" class="headerlink" title="MCP 协议基础"></a>MCP 协议基础</h2><h3 id="MCP-是什么"><a href="#MCP-是什么" class="headerlink" title="MCP 是什么"></a>MCP 是什么</h3><p>MCP（Model Context Protocol，模型上下文协议）是 Anthropic 于 2024 年 11 月发布的<strong>开放标准协议</strong>，目标是解决 AI 模型与外部工具、数据源之间「各说各话」的问题。</p>
+<p>在 MCP 之前，每个 AI 产品对接外部能力都要自己定一套接口格式，工具和模型之间是 M×N 的定制集成；MCP 引入统一规范后，变成 M+N 的标准接入——工具只要实现 MCP，就能被任何支持 MCP 的模型调用。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">Before MCP（各自定制）          After MCP（统一协议）</span><br><span class="line"></span><br><span class="line">Model A ─── custom ─── Tool 1   Model A ──┐</span><br><span class="line">Model A ─── custom ─── Tool 2             ├── MCP ── Tool 1</span><br><span class="line">Model B ─── custom ─── Tool 1   Model B ──┤           Tool 2</span><br><span class="line">Model B ─── custom ─── Tool 2             └── MCP ── Tool 3</span><br><span class="line">...（M×N 集成）                  ...（M+N 接入）</span><br></pre></td></tr></table></figure>
+
+<h3 id="三个核心角色"><a href="#三个核心角色" class="headerlink" title="三个核心角色"></a>三个核心角色</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">┌────────────┐     hosts/manages     ┌────────────┐</span><br><span class="line">│    Host    │ ─────────────────────▶│   Client   │</span><br><span class="line">│（AI 应用层）│                       │（协议会话层）│</span><br><span class="line">└────────────┘                       └─────┬──────┘</span><br><span class="line">                                           │ MCP Protocol</span><br><span class="line">                                           │（JSON-RPC 2.0）</span><br><span class="line">                                           ▼</span><br><span class="line">                                     ┌────────────┐</span><br><span class="line">                                     │   Server   │</span><br><span class="line">                                     │（工具/数据层）│</span><br><span class="line">                                     └────────────┘</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><strong>Host</strong>：用户直接使用的 AI 应用（如对话客户端），负责协调 LLM 和 MCP Client</li>
+<li><strong>Client</strong>：协议会话的发起方，维护与 Server 的 1:1 连接，代表 Host 向 Server 发送请求</li>
+<li><strong>Server</strong>：对外暴露工具能力的服务（可以是本地进程、远程服务，或者——如本文的场景——端侧 App 本身）</li>
+</ul>
+<p>在端侧场景里，<strong>App 同时扮演 Host 和 Server 两个角色</strong>：一方面是用户的 AI 对话入口，另一方面向 AI 后端暴露「可以调用哪些本地能力」。</p>
+<h3 id="核心消息类型"><a href="#核心消息类型" class="headerlink" title="核心消息类型"></a>核心消息类型</h3><p>MCP 基于 <strong>JSON-RPC 2.0</strong> 定义了一组标准消息，与工具调用相关的核心流程如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">Client                                    Server</span><br><span class="line">  │                                          │</span><br><span class="line">  │─── initialize ──────────────────────────▶│  建立会话，协商版本和能力</span><br><span class="line">  │◀── initialize result ────────────────────│</span><br><span class="line">  │                                          │</span><br><span class="line">  │─── tools/list ──────────────────────────▶│  获取可用工具列表</span><br><span class="line">  │◀── tools/list result ────────────────────│  返回工具的 name/description/inputSchema</span><br><span class="line">  │                                          │</span><br><span class="line">  │   （LLM 推理，决定调用哪个工具）           │</span><br><span class="line">  │                                          │</span><br><span class="line">  │─── tools/call ──────────────────────────▶│  调用具体工具</span><br><span class="line">  │    &#123; name, arguments &#125;                   │</span><br><span class="line">  │◀── tools/call result ────────────────────│  返回工具执行结果</span><br><span class="line">  │    &#123; content, isError &#125;                  │</span><br></pre></td></tr></table></figure>
+
+<p>每个工具的元数据格式（tools&#x2F;list 返回的 tool 描述）：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ov_note_write&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;description&quot;</span><span class="punctuation">:</span> <span class="string">&quot;将眼镜拍摄的图片记录为笔记&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;inputSchema&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;object&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;properties&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span>   <span class="punctuation">&#123;</span> <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;enum&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;app&quot;</span><span class="punctuation">]</span> <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;note_id&quot;</span><span class="punctuation">:</span>  <span class="punctuation">&#123;</span> <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;description&quot;</span><span class="punctuation">:</span> <span class="string">&quot;笔记 ID&quot;</span> <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;photo_id&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span> <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;description&quot;</span><span class="punctuation">:</span> <span class="string">&quot;图片 ID&quot;</span> <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;required&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;source&quot;</span><span class="punctuation">,</span> <span class="string">&quot;note_id&quot;</span><span class="punctuation">,</span> <span class="string">&quot;photo_id&quot;</span><span class="punctuation">]</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="MCP-与-Function-Calling-的区别"><a href="#MCP-与-Function-Calling-的区别" class="headerlink" title="MCP 与 Function Calling 的区别"></a>MCP 与 Function Calling 的区别</h3><p>很多人会问：MCP 和 OpenAI 的 Function Calling 有什么区别？</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Function Calling</th>
+<th>MCP</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>定位</td>
+<td>单一模型厂商的私有规范</td>
+<td>跨厂商开放标准</td>
+</tr>
+<tr>
+<td>工具发现</td>
+<td>每次请求手动传入</td>
+<td><code>tools/list</code> 动态发现</td>
+</tr>
+<tr>
+<td>连接模型</td>
+<td>直连 API</td>
+<td>Client-Server 架构，可跨进程</td>
+</tr>
+<tr>
+<td>状态</td>
+<td>无状态</td>
+<td>有状态会话（supports resources, prompts）</td>
+</tr>
+<tr>
+<td>传输层</td>
+<td>HTTP&#x2F;SSE</td>
+<td>可插拔（stdio、SSE、WebSocket 等）</td>
+</tr>
+</tbody></table>
+<p>简单说：<strong>Function Calling 是「模型能用工具」，MCP 是「模型和工具如何标准化对话」</strong>。</p>
+<h3 id="在端侧场景的变体"><a href="#在端侧场景的变体" class="headerlink" title="在端侧场景的变体"></a>在端侧场景的变体</h3><p>标准 MCP 假设 Server 运行在独立进程（本地 stdio 或远程 HTTP），但在移动端 AI 场景里，工具执行天然要在 App 进程内完成（调蓝牙、操本地 DB、控 SDK）。因此端侧实现会做几处适配：</p>
+<ol>
+<li><strong>传输层替换</strong>：用 RTC&#x2F;gRPC 替代 stdio&#x2F;HTTP，消息格式保持 JSON-RPC 语义</li>
+<li><strong>工具声明时机</strong>：不是 <code>tools/list</code> 请求时才发，而是随对话初始化配置一次性下发</li>
+<li><strong>Server 内嵌 App</strong>：App 本身就是 MCP Server，工具调用直接驱动本地能力</li>
+</ol>
+<p>这三处适配，是理解本文整套架构设计的前提。</p>
+<hr>
+<h2 id="背景：为什么需要-MCP-协议网关"><a href="#背景：为什么需要-MCP-协议网关" class="headerlink" title="背景：为什么需要 MCP 协议网关"></a>背景：为什么需要 MCP 协议网关</h2><p>有了 MCP 协议，AI 和工具之间的通信有了统一标准。但在端侧落地时，马上面临一个新问题：<strong>AI 侧是统一协议，端侧的业务却天然是分散的</strong>——眼镜走 BLE 蓝牙、车控走私有协议、音乐调第三方 SDK、笔记走镜控拍照。</p>
+<p>把一个统一协议请求，正确路由到多个异构业务域，再把结果统一封装回去——这就是这个模块要解决的核心问题。</p>
+<h2 id="一、模块整体职责"><a href="#一、模块整体职责" class="headerlink" title="一、模块整体职责"></a>一、模块整体职责</h2><p>这个模块可以理解为一个 <strong>MCP 协议执行中枢</strong>，主要分两块：</p>
+<h3 id="1-Tool-元数据管理（ToolManager）"><a href="#1-Tool-元数据管理（ToolManager）" class="headerlink" title="1. Tool 元数据管理（ToolManager）"></a>1. Tool 元数据管理（ToolManager）</h3><p>负责维护 MCP tool list，向上游声明「当前 App 和眼镜支持哪些工具、每个工具的参数格式是什么」。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">┌──────────────────────────────────────────────────┐</span><br><span class="line">│                   MCPToolManager                  │</span><br><span class="line">│                                                   │</span><br><span class="line">│  - 提供 App 工具集（appTools）                     │</span><br><span class="line">│  - 提供眼镜工具集（glassesTools）                  │</span><br><span class="line">│  - 管理工具 JSON 的版本、缓存、回退策略             │</span><br><span class="line">└──────────────────────────────────────────────────┘</span><br><span class="line">            │                           │</span><br><span class="line">   ┌────────┘                           └────────┐</span><br><span class="line">   ▼                                             ▼</span><br><span class="line">┌──────────────────┐             ┌──────────────────────┐</span><br><span class="line">│   App 工具集      │             │    眼镜工具集          │</span><br><span class="line">├──────────────────┤             ├──────────────────────┤</span><br><span class="line">│ 优先读本地 JSON   │             │ 按固件版本门槛判断      │</span><br><span class="line">│ 失败则动态拼装    │             │ 低版本 → 本地 JSON     │</span><br><span class="line">│ MD5 作为版本标识  │             │ 高版本 → CRC + 多级缓存 │</span><br><span class="line">└──────────────────┘             └──────────────────────┘</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-任务调度与执行（TaskManager-Executor）"><a href="#2-任务调度与执行（TaskManager-Executor）" class="headerlink" title="2. 任务调度与执行（TaskManager + Executor）"></a>2. 任务调度与执行（TaskManager + Executor）</h3><p>负责把 MCP 请求转成任务对象、选择执行器、排队执行、生成响应并发回上游。</p>
+<p>整个调用链如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">上游（RTC / gRPC / AI 对话系统）</span><br><span class="line">        │ 下发 MCP RequestTransportData（protobuf）</span><br><span class="line">        ▼</span><br><span class="line">   协议适配层（解析 JSON-RPC，统一为内部请求模型）</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">   任务调度层（去重、创建任务、串行执行、超时管理）</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">   路由分发层（source 一级分流 + methodName 二级路由）</span><br><span class="line">        │</span><br><span class="line">   ┌────┴────┬──────────┬──────────┐</span><br><span class="line">   ▼         ▼          ▼          ▼</span><br><span class="line">眼镜业务   车控业务   音乐业务   笔记业务</span><br><span class="line">   │         │          │          │</span><br><span class="line">   └────┬────┴──────────┴──────────┘</span><br><span class="line">        ▼</span><br><span class="line">   底层能力（BLE / 私有协议 / 第三方 SDK / 本地 DB）</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">   响应回传层（封装 JSON-RPC response，按链路发回上游）</span><br></pre></td></tr></table></figure>
+
+<h2 id="二、核心分层架构"><a href="#二、核心分层架构" class="headerlink" title="二、核心分层架构"></a>二、核心分层架构</h2><p>从职责来看，整个模块分成四层。</p>
+<h3 id="第-1-层：协议层"><a href="#第-1-层：协议层" class="headerlink" title="第 1 层：协议层"></a>第 1 层：协议层</h3><p><strong>文件：<code>MCPModels.swift</code></strong></p>
+<p><strong>负责解析和封装 MCP 传输数据。</strong></p>
+<p>上游通过 protobuf 传入 <code>MCPRequestTransportData</code>，协议层把它解包为内部模型 <code>MCPRequest</code>。关键在于：原始数据里的 <code>content</code> 字段是一段 JSON-RPC 字节流，需要再次解析才能拿到 <code>methodName</code> 和 <code>arguments</code>。</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">MCPRequest</span> &#123;</span><br><span class="line">    <span class="keyword">var</span> sessionId: <span class="type">String</span> <span class="operator">=</span> <span class="string">&quot;&quot;</span></span><br><span class="line">    <span class="keyword">var</span> id: <span class="type">String</span> <span class="operator">=</span> <span class="string">&quot;&quot;</span></span><br><span class="line">    <span class="keyword">var</span> content: <span class="type">Data</span> <span class="operator">=</span> <span class="type">Data</span>()</span><br><span class="line">    <span class="keyword">var</span> jsonRPCRequest: <span class="type">JSONRPCRequest</span>?</span><br><span class="line"></span><br><span class="line">    <span class="keyword">init</span>(<span class="params">mcpRequestData</span>: <span class="type">MCPRequestTransportData</span>) &#123;</span><br><span class="line">        <span class="keyword">self</span>.sessionId <span class="operator">=</span> mcpRequestData.request.sessionID</span><br><span class="line">        <span class="keyword">self</span>.id <span class="operator">=</span> mcpRequestData.request.id</span><br><span class="line">        <span class="keyword">self</span>.content <span class="operator">=</span> mcpRequestData.request.content</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 第二次解析：从 Data 还原出 JSON-RPC 结构</span></span><br><span class="line">        <span class="keyword">let</span> contentJsonString <span class="operator">=</span> jsonDataToString(content) <span class="operator">??</span> <span class="string">&quot;&quot;</span></span><br><span class="line">        <span class="keyword">self</span>.jsonRPCRequest <span class="operator">=</span> <span class="type">JSONRPCParser</span>.parseJSONRPCRequest(contentJsonString)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">var</span> methodName: <span class="type">String</span>? &#123; jsonRPCRequest<span class="operator">?</span>.params<span class="operator">?</span>.name &#125;</span><br><span class="line">    <span class="keyword">var</span> arguments: <span class="type">JSONRPCArguments</span>? &#123; jsonRPCRequest<span class="operator">?</span>.params<span class="operator">?</span>.arguments &#125;</span><br><span class="line">    <span class="keyword">var</span> requestId: <span class="type">Int</span>? &#123; jsonRPCRequest<span class="operator">?</span>.id &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里有一个值得注意的设计：<code>MCPResponse</code> 提供了 <code>success</code> &#x2F; <code>failure</code> 两个静态工厂方法，失败响应会自动生成符合 JSON-RPC 规范的 <code>error</code> 结构，业务层不需要关心协议格式。</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 成功：由业务层传入 content Data</span></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">func</span> <span class="title function_">success</span>(<span class="params">mcpRequest</span>: <span class="type">MCPRequest</span>, <span class="params">content</span>: <span class="type">Data</span>) -&gt; <span class="type">MCPResponse</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 失败：内部自动构造标准 JSON-RPC error</span></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">func</span> <span class="title function_">failure</span>(<span class="params">mcpRequest</span>: <span class="type">MCPRequest</span>, <span class="params">message</span>: <span class="type">String</span>) -&gt; <span class="type">MCPResponse</span> &#123;</span><br><span class="line">    <span class="keyword">let</span> content <span class="operator">=</span> <span class="type">JSONRPCParser</span>.createFailureResponseContent(</span><br><span class="line">        requestId: mcpRequest.requestId <span class="operator">??</span> <span class="number">0</span>, message: message</span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">return</span> <span class="type">MCPResponse</span>(sessionId: <span class="operator">...</span>, content: content, isSuccess: <span class="literal">false</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="第-2-层：调度层"><a href="#第-2-层：调度层" class="headerlink" title="第 2 层：调度层"></a>第 2 层：调度层</h3><p><strong>文件：<code>AITaskManager.swift</code></strong></p>
+<p><strong>负责任务生命周期管理。</strong></p>
+<p>调度层是整个模块的「大脑」，核心逻辑集中在 <code>receiveMCPRequest</code> → <code>executeNextTask</code> → <code>handleTaskResult</code> 这条主干上。所有操作都派发到 <code>taskQueue</code>（一个串行 <code>DispatchQueue</code>），保证任务数组的线程安全。</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">receiveMCPRequest</span>(<span class="params">taskBuilder</span>: <span class="type">AITaskBuilder</span>) &#123;</span><br><span class="line">    taskQueue.async &#123; [<span class="keyword">weak</span> <span class="keyword">self</span>] <span class="keyword">in</span></span><br><span class="line">        <span class="keyword">guard</span> <span class="keyword">let</span> <span class="keyword">self</span> <span class="operator">=</span> <span class="keyword">self</span> <span class="keyword">else</span> &#123; <span class="keyword">return</span> &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">let</span> mcpRequest <span class="operator">=</span> <span class="type">MCPRequest</span>(mcpRequestData: taskBuilder.mcpRequestData)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 1. 请求去重：同一 id 不重复入队</span></span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">self</span>.taskArray.first(where: &#123; <span class="variable">$0</span>.request.id <span class="operator">==</span> mcpRequest.id &#125;) <span class="operator">!=</span> <span class="literal">nil</span> &#123;</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 2. 匹配执行器</span></span><br><span class="line">        <span class="keyword">guard</span> <span class="keyword">let</span> executor <span class="operator">=</span> <span class="keyword">self</span>.findExecutor(for: mcpRequest.methodName <span class="operator">??</span> <span class="string">&quot;&quot;</span>) <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 3. 创建任务并入队</span></span><br><span class="line">        <span class="keyword">var</span> task <span class="operator">=</span> <span class="type">AITask</span>(request: mcpRequest, executor: executor, linkType: taskBuilder.linkType)</span><br><span class="line">        task.topicId <span class="operator">=</span> taskBuilder.topicId</span><br><span class="line">        <span class="keyword">self</span>.taskArray.append(task)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 4. 尝试消费下一个任务</span></span><br><span class="line">        <span class="keyword">self</span>.executeNextTask()</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>串行消费模型</strong>：<code>executeNextTask</code> 每次只取第一个 <code>waiting</code> 状态的任务执行，上一个任务的 <code>handleTaskResult</code> 回调里再触发下一个。这对顺序保证很好，但如果某个任务长时间阻塞（比如眼镜拍照超时），后续任务全部等待。</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 完成流程：更新状态 → 封装响应 → 移除任务 → 执行下一个</span></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">func</span> <span class="title function_">handleTaskResult</span>(<span class="params">taskId</span>: <span class="type">String</span>, <span class="params">result</span>: <span class="type">AITaskResult</span>) &#123;</span><br><span class="line">    taskQueue.async &#123; [<span class="keyword">weak</span> <span class="keyword">self</span>] <span class="keyword">in</span></span><br><span class="line">        <span class="keyword">self</span><span class="operator">?</span>.updateTaskState(taskId: taskId, state: result.state)</span><br><span class="line">        <span class="keyword">self</span><span class="operator">?</span>.createResponse(for: taskId, result: result)</span><br><span class="line">        <span class="keyword">self</span><span class="operator">?</span>.removeTask(taskId: taskId)</span><br><span class="line">        <span class="keyword">self</span><span class="operator">?</span>.executeNextTask()</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>串行模型的固有约束</strong>：任务生命周期完全依赖执行器的 <code>completion</code> 回调。如果某个执行器因为底层 SDK 无响应、BLE 断连等原因迟迟不回调，这个任务就会长期占据队列头部，后续任务全部等待。因此每个 <code>AITask</code> 预留了 <code>timeoutInterval</code> 字段（默认 20 秒），<strong>超时保护是这套串行模型的必要配套</strong>，在硬件联动类业务场景里尤为关键。</p>
+<h3 id="第-3-层：执行层"><a href="#第-3-层：执行层" class="headerlink" title="第 3 层：执行层"></a>第 3 层：执行层</h3><p><strong>文件：<code>AITaskExecutor.swift</code> + 各业务 Extension</strong></p>
+<p><strong>负责按业务路由，驱动实际能力。</strong></p>
+<p>路由规则：<code>source</code>（请求来源）一级分流 + <code>methodName</code> 二级路由。</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">execute</span>(<span class="params">task</span>: <span class="type">AITask</span>, <span class="params">completion</span>: <span class="keyword">@escaping</span> (<span class="type">AITaskResult</span>) -&gt; <span class="type">Void</span>) &#123;</span><br><span class="line">    <span class="keyword">guard</span> <span class="keyword">let</span> source <span class="operator">=</span> task.request.arguments<span class="operator">?</span>.source <span class="keyword">else</span> &#123;</span><br><span class="line">        completion(.failure(message: <span class="string">&quot;source为空&quot;</span>)); <span class="keyword">return</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">guard</span> <span class="keyword">let</span> methodName <span class="operator">=</span> task.request.methodName <span class="keyword">else</span> &#123;</span><br><span class="line">        completion(.failure(message: <span class="string">&quot;方法名为空&quot;</span>)); <span class="keyword">return</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> source <span class="operator">==</span> <span class="string">&quot;glasses&quot;</span> &#123;</span><br><span class="line">        <span class="comment">// 镜控任务：通用硬件控制（音量、录音、相机、播放等）</span></span><br><span class="line">        <span class="keyword">if</span> isCommonGlassesControlTask(methodName: methodName) &#123;</span><br><span class="line">            executeGlassesControlTask(task: task, completion: completion)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> source <span class="operator">==</span> <span class="string">&quot;app&quot;</span> &#123;</span><br><span class="line">        <span class="comment">// App 侧任务：按 method 二级路由</span></span><br><span class="line">        <span class="keyword">switch</span> methodName &#123;</span><br><span class="line">        <span class="keyword">case</span> <span class="string">&quot;fetch_image&quot;</span>:          executeNeedPhotoTask(task:, completion:)</span><br><span class="line">        <span class="keyword">case</span> <span class="string">&quot;app_phone_call&quot;</span>:       executeAppPhoneCallTask(task:, completion:)</span><br><span class="line">        <span class="keyword">case</span> <span class="string">&quot;media_search&quot;</span>:         executeSearchMusic(task:, completion:)</span><br><span class="line">        <span class="keyword">case</span> <span class="string">&quot;app_playback_control&quot;</span>: executeMusicControl(task:, completion:)</span><br><span class="line">        <span class="keyword">case</span> <span class="string">&quot;ov_note_write&quot;</span>:        executeMemoryTask(task:, completion:)</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> source <span class="operator">==</span> <span class="string">&quot;vehicle&quot;</span> &#123;</span><br><span class="line">        <span class="comment">// 车控任务：按 methodName 路由到不同车控能力</span></span><br><span class="line">        executeVehicleControl(task:, name: <span class="type">McpRequestName</span>(rawValue: methodName), completion:)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>业务逻辑通过 <strong>Swift Extension</strong> 按域拆分到独立文件，主执行器本身只做路由转发：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">AITaskExecutor+Glasses.swift      眼镜控制、拍照取图、通讯录拨号、权限查询</span><br><span class="line">AITaskExecutor+Vehicle.swift      车控、充电、切换默认车辆</span><br><span class="line">AITaskExecutor+Music.swift        音乐搜索、场景推导、播放列表构建</span><br><span class="line">AITaskExecutor+MusicControl.swift 播控（快进/收藏/播放模式/歌单起播）</span><br><span class="line">AITaskExecutor+Memory.swift       笔记记录（双写补偿）</span><br><span class="line">AITaskExecutor+MusicCache.swift   歌单分页缓存补全</span><br></pre></td></tr></table></figure>
+
+<h3 id="第-4-层：能力描述层"><a href="#第-4-层：能力描述层" class="headerlink" title="第 4 层：能力描述层"></a>第 4 层：能力描述层</h3><p><strong>文件：<code>MCPToolManager.swift</code></strong></p>
+<p><strong>负责向外声明支持的工具集。</strong></p>
+<p>它不执行业务，只提供 JSON Schema 形式的工具元数据，告诉 AI「你可以调哪些工具、参数格式是什么」。App 工具集固定在本地 <code>app_function_list.json</code> 里，以 MD5 作为版本标识，实现很简洁。</p>
+<p>针对智能眼镜，做了一套<strong>动态能力协商</strong>机制：低版本固件使用本地内置工具集，高版本固件通过 CRC 校验 + 多级缓存（内存 → 沙盒 → 服务端拉取 → 本地回退）动态获取最新工具集。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">固件版本检查</span><br><span class="line">    │</span><br><span class="line">    ├─ &lt; 1.3.8 → 直接用内置 GlassesMCPTools.json</span><br><span class="line">    │</span><br><span class="line">    └─ ≥ 1.3.8 → 查询眼镜 CRC</span><br><span class="line">                    │</span><br><span class="line">                    ├─ 命中内存缓存 → 直接返回</span><br><span class="line">                    ├─ 命中沙盒缓存（按 CRC 文件名）→ 读文件返回</span><br><span class="line">                    └─ 未命中 → 从服务器拉取 → 写沙盒 → 返回</span><br><span class="line">                               （任何失败 → fallback 内置 JSON）</span><br></pre></td></tr></table></figure>
+
+<h3 id="工具集如何传递给-AI"><a href="#工具集如何传递给-AI" class="headerlink" title="工具集如何传递给 AI"></a>工具集如何传递给 AI</h3><p>工具集并不是通过独立接口注册给 AI 的，而是<strong>在发起 AI 对话时，作为对话配置的一部分一起下发</strong>。</p>
+<p><strong>第一步：打包</strong></p>
+<p><code>MCPToolManager</code> 把 tool list 序列化为 JSON 字符串，用 MD5 作为版本标识，封装成 protobuf 结构：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">SSAICloudMetadataToolList &#123;</span><br><span class="line">    toolContent:   &quot;&lt;完整 JSON 字符串&gt;&quot;   // tool list 本体</span><br><span class="line">    toolVersion:   &quot;&lt;MD5 / CRC&gt;&quot;         // 版本标识，AI 侧用于判断是否需要重新解析</span><br><span class="line">    deviceVersion: &quot;&lt;App 版本号&gt;&quot;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>第二步：挂载到对话配置</strong></p>
+<p><code>SSAIRtcChatDynamic</code> 发起 RTC 对话前，把 App 工具集和眼镜工具集写入 <code>SSAICloudDialogConfig</code>：</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">dialogConfig.mcpTool.appTool     <span class="operator">=</span> appTools      <span class="comment">// App 7 个工具</span></span><br><span class="line">dialogConfig.mcpTool.glassesTool <span class="operator">=</span> glassesTools  <span class="comment">// 眼镜 6 个工具</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>第三步：随 <code>startDialog</code> 一次性下发</strong></p>
+<p>调用 <code>startDialog</code> 时，整个 <code>DialogConfig</code>（含 tool list）经 Protobuf 序列化，通过 RTC 通道发送给 AI 后端。AI 收到这份声明后，便知道「当前客户端支持哪些工具、每个工具的参数格式是什么」，后续直接通过 MCP 协议下发 tool call 请求。</p>
+<p><strong>关键结论：Tool list 是随对话初始化参数一次性声明给 AI 的，不是 tool call 到来时临时查询的。</strong></p>
+<h2 id="三、核心数据结构"><a href="#三、核心数据结构" class="headerlink" title="三、核心数据结构"></a>三、核心数据结构</h2><p>理解这几个模型，基本就理解了整个模块的数据流。</p>
+<h3 id="MCPRequest（请求模型）"><a href="#MCPRequest（请求模型）" class="headerlink" title="MCPRequest（请求模型）"></a>MCPRequest（请求模型）</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">MCPRequest</span><br><span class="line">├── sessionId         会话 ID（对应一次 AI 对话）</span><br><span class="line">├── id                传输层请求 ID（去重 key）</span><br><span class="line">├── content           原始 JSON-RPC 字节流</span><br><span class="line">├── jsonRPCRequest    解析后的 JSON-RPC 请求结构</span><br><span class="line">├── methodName        业务方法名（来自 params.name）</span><br><span class="line">├── arguments         业务参数（来自 params.arguments）</span><br><span class="line">└── requestId         JSON-RPC 内部 id（用于构造响应）</span><br></pre></td></tr></table></figure>
+
+<h3 id="MCPResponse（响应模型）"><a href="#MCPResponse（响应模型）" class="headerlink" title="MCPResponse（响应模型）"></a>MCPResponse（响应模型）</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">MCPResponse</span><br><span class="line">├── sessionId         对应请求的会话 ID</span><br><span class="line">├── id                对应请求的传输层 ID</span><br><span class="line">├── content           JSON-RPC response 字节流</span><br><span class="line">└── isSuccess         是否成功（失败时自动填充标准 error 结构）</span><br></pre></td></tr></table></figure>
+
+<h3 id="AITask（任务模型）"><a href="#AITask（任务模型）" class="headerlink" title="AITask（任务模型）"></a>AITask（任务模型）</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">AITask</span><br><span class="line">├── taskId            本地 UUID（任务管理用，非业务）</span><br><span class="line">├── request           对应 MCP 请求</span><br><span class="line">├── executor          执行器引用</span><br><span class="line">├── linkType          链路类型（RTC / gRPC）</span><br><span class="line">├── state             任务状态（waiting → executing → success/failed/timeout）</span><br><span class="line">├── timeoutInterval   超时时间（默认 20s，需配合超时定时器使用）</span><br><span class="line">├── topicId           gRPC 场景的会话主题（车控业务扩展）</span><br><span class="line">└── jobId             车控任务单号（车控业务扩展）</span><br></pre></td></tr></table></figure>
+
+<p><code>AITask</code> 采用了「通用任务模型 + 局部业务挂载字段」的设计，用来适配车控这种需要异步任务单号的场景。</p>
+<h3 id="JSONRPCArguments（参数承载结构）"><a href="#JSONRPCArguments（参数承载结构）" class="headerlink" title="JSONRPCArguments（参数承载结构）"></a>JSONRPCArguments（参数承载结构）</h3><figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">JSONRPCArguments</span>: <span class="title class_ inherited__">Convertible</span> &#123;</span><br><span class="line">    <span class="keyword">var</span> source: <span class="type">String</span>?          <span class="comment">// 请求来源（glasses/app/vehicle）</span></span><br><span class="line">    <span class="keyword">var</span> action: <span class="type">String</span>?          <span class="comment">// 动作类型</span></span><br><span class="line">    <span class="keyword">var</span> entity: <span class="type">String</span>?          <span class="comment">// 操作对象</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// 眼镜相关</span></span><br><span class="line">    <span class="keyword">var</span> width: <span class="type">String</span>?</span><br><span class="line">    <span class="keyword">var</span> height: <span class="type">String</span>?</span><br><span class="line">    <span class="keyword">var</span> entities: [<span class="type">String</span>]<span class="operator">?</span></span><br><span class="line">    <span class="keyword">var</span> contacts: <span class="type">String</span>?</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 音乐相关</span></span><br><span class="line">    <span class="keyword">var</span> music_title: <span class="type">String</span>?</span><br><span class="line">    <span class="keyword">var</span> music_singer: <span class="type">String</span>?</span><br><span class="line">    <span class="keyword">var</span> music_album: <span class="type">String</span>?</span><br><span class="line">    <span class="keyword">var</span> tag: <span class="type">String</span>?</span><br><span class="line">    <span class="keyword">var</span> play_mode: <span class="type">String</span>?</span><br><span class="line">    <span class="keyword">var</span> play_list: <span class="type">String</span>?</span><br><span class="line">    <span class="keyword">var</span> sort_order: <span class="type">String</span>?</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 车控相关</span></span><br><span class="line">    <span class="keyword">var</span> cmdKey: <span class="type">String</span>?</span><br><span class="line">    <span class="keyword">var</span> deviceId: <span class="type">String</span>?</span><br><span class="line">    <span class="keyword">var</span> modelId: <span class="type">String</span>?</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 笔记相关</span></span><br><span class="line">    <span class="keyword">var</span> note_id: <span class="type">String</span>?</span><br><span class="line">    <span class="keyword">var</span> photo_id: <span class="type">String</span>?</span><br><span class="line">    <span class="comment">// ... 共 25+ 个字段</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个结构是所有业务参数的统一承载体——优点是简单，缺点是<strong>随着业务增长容易膨胀失控</strong>，后面会专门分析这个问题。</p>
+<h2 id="四、一条请求的完整生命周期"><a href="#四、一条请求的完整生命周期" class="headerlink" title="四、一条请求的完整生命周期"></a>四、一条请求的完整生命周期</h2><p>以「AI 请求眼镜拍照并返回图片」为例，走一遍完整流程：</p>
+<p><strong>第一步：接收请求</strong></p>
+<p>调度层的 <code>receiveMCPRequest</code> 接到来自 RTC&#x2F;gRPC 的 protobuf 传输包，解析为 <code>MCPRequest</code>，做去重检测（<code>taskArray.first &#123; $0.request.id == mcpRequest.id &#125;</code>），根据 <code>methodName</code> 匹配执行器，创建 <code>AITask</code>，放入任务队列。</p>
+<p><strong>第二步：调度执行</strong></p>
+<p><code>executeNextTask</code> 找到第一个 <code>waiting</code> 状态的任务，更新为 <code>executing</code>，调用 <code>executor.execute(task:completion:)</code>。</p>
+<p><strong>第三步：执行器分发</strong></p>
+<p><code>source = &quot;app&quot;</code>，<code>methodName = &quot;fetch_image&quot;</code>，路由到眼镜图片获取逻辑：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">1. 检查蓝牙连接（connectedDevice() != nil）</span><br><span class="line">2. 通过 BLE 发送「需要 AI 拍照」命令（携带 sessionId）</span><br><span class="line">3. 注册图片流回调（SessionServer 接收分包数据）：</span><br><span class="line">   - onReceivingPhotoNormalPackage: 累积数据包</span><br><span class="line">   - onReceivedPhotoEndPackage: 处理完整图片</span><br><span class="line">   - onReceivedPhotoPackageError: 清理错误状态</span><br><span class="line">4. 完整图片上传至对象存储，获取图片 URL</span><br><span class="line">5. 同时发本地通知（ShowQueryImage），触发 UI 展示缩略图</span><br><span class="line">6. 回调 completion(.success(data: [&quot;url&quot;: url, &quot;width&quot;: w, &quot;height&quot;: h]))</span><br></pre></td></tr></table></figure>
+
+<p><strong>第四步：结果回收</strong></p>
+<p>执行完成，调度层的 <code>handleTaskResult</code> 更新任务状态，调用 <code>executor.getResponse(task:result:)</code> 按 <code>methodName</code> 选择对应的 builder 生成 JSON-RPC 响应内容。</p>
+<p><strong>第五步：发送响应</strong></p>
+<p>根据链路类型分别回传：</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> task.linkType <span class="operator">==</span> .rtc &#123;</span><br><span class="line">    <span class="type">RtcChatClient</span>.shared.pushMessage(mcpResponse: mcpResponse)</span><br><span class="line">&#125; <span class="keyword">else</span> <span class="keyword">if</span> task.linkType <span class="operator">==</span> .gRPC &#123;</span><br><span class="line">    <span class="comment">// 通过 NotificationCenter 广播，解耦 gRPC 发送逻辑</span></span><br><span class="line">    <span class="type">NotificationCenter</span>.default.post(</span><br><span class="line">        name: <span class="type">Notification</span>.<span class="type">Name</span>.sendMcpResponseViaGRPC,</span><br><span class="line">        object: <span class="literal">nil</span>,</span><br><span class="line">        userInfo: [<span class="string">&quot;mcpResponse&quot;</span>: mcpResponse, <span class="string">&quot;topicId&quot;</span>: task.topicId]</span><br><span class="line">    )</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>第六步：响应后处理</strong></p>
+<p>发送响应后还有两类附加处理：</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">func</span> <span class="title function_">handleBusinessAfterSendResponse</span>(<span class="params">response</span>: <span class="type">MCPResponse</span>, <span class="params">task</span>: <span class="type">AITask</span>) &#123;</span><br><span class="line">    <span class="comment">// 全局退出：app_global_control + action=quit → 停止语音流和 RTC 会话</span></span><br><span class="line">    task.executor.handleGlobalQuitControl(task: task)</span><br><span class="line">    <span class="comment">// 动态退出对话：读取 enable_tts 信号决定会话何时关闭</span></span><br><span class="line">    task.executor.handleDynamicQuitDialogue(response: response, task: task)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>enable_tts</code> 这个字段很有意思：<strong>MCP 响应不只是业务结果，还承载了对语音会话状态机的控制信号。</strong> 这是移动端 AI Agent 场景里一个很实际的设计——AI 的回答可能包含朗读内容，系统需要等朗读完才关闭会话。</p>
+<ul>
+<li><code>enable_tts = true</code> → 等 TTS 播完，再关闭语音会话</li>
+<li><code>enable_tts = false</code> → 收到 answer.isFinal 立即关闭</li>
+<li>字段不存在 → 按正常流程关闭</li>
+</ul>
+<h2 id="五、完整示例：ov-note-write-拍照写笔记全链路"><a href="#五、完整示例：ov-note-write-拍照写笔记全链路" class="headerlink" title="五、完整示例：ov_note_write 拍照写笔记全链路"></a>五、完整示例：ov_note_write 拍照写笔记全链路</h2><p>以「AI 指令眼镜拍照并写入笔记」为例，从上游接收请求到响应回传，完整走一遍代码路径。</p>
+<h3 id="第一步：上游接收-MCP-请求"><a href="#第一步：上游接收-MCP-请求" class="headerlink" title="第一步：上游接收 MCP 请求"></a>第一步：上游接收 MCP 请求</h3><p>AI 对话建立在 RTC 通道上。AI 后端决定调用 <code>ov_note_write</code> 工具时，会通过 RTC SDK 推送一条 protobuf 消息到 App。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">RTC SDK 收到远端消息</span><br><span class="line">  ↓</span><br><span class="line">SSAIRtcChatDynamic（RTC 消息处理层）</span><br><span class="line">  ↓</span><br><span class="line">delegate.rtcOnMcpRequestReceived(mcpRequestData: MCPRequestTransportData)</span><br><span class="line">  ↓</span><br><span class="line">GlassesService.handleMCPRequest(mcpRequestData:)</span><br><span class="line">  ↓</span><br><span class="line">AITaskManager.receiveMCPRequest(taskBuilder:)</span><br></pre></td></tr></table></figure>
+
+<p>收到的原始数据是 protobuf 格式的 <code>MCPRequestTransportData</code>，其中 <code>content</code> 字段是一段 JSON-RPC 字节流：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;jsonrpc&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2.0&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;id&quot;</span><span class="punctuation">:</span> <span class="number">42</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;method&quot;</span><span class="punctuation">:</span> <span class="string">&quot;call_tool&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;params&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ov_note_write&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;arguments&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;app&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;note_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;550e8400-e29b-41d4-a716-446655440000&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;photo_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;1712345678000&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="第二步：协议解包"><a href="#第二步：协议解包" class="headerlink" title="第二步：协议解包"></a>第二步：协议解包</h3><p><code>AITaskManager</code> 把 protobuf 传入 <code>MCPRequest</code> 初始化，内部做<strong>两次解析</strong>：</p>
+<ol>
+<li>第一次：从 protobuf 取出 <code>sessionId</code>、<code>id</code>、<code>content</code> 字节流</li>
+<li>第二次：把 <code>content</code> 反序列化成 <code>JSONRPCRequest</code>，拿到 <code>methodName</code>（<code>ov_note_write</code>）和 <code>arguments</code></li>
+</ol>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">MCPRequest</span> &#123;</span><br><span class="line">    <span class="keyword">init</span>(<span class="params">mcpRequestData</span>: <span class="type">MCPRequestTransportData</span>) &#123;</span><br><span class="line">        <span class="keyword">self</span>.sessionId <span class="operator">=</span> mcpRequestData.request.sessionID</span><br><span class="line">        <span class="keyword">self</span>.id        <span class="operator">=</span> mcpRequestData.request.id</span><br><span class="line">        <span class="keyword">self</span>.content   <span class="operator">=</span> mcpRequestData.request.content</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 第二次解析：content bytes → JSON-RPC 结构</span></span><br><span class="line">        <span class="keyword">let</span> json <span class="operator">=</span> <span class="type">String</span>(data: content, encoding: .utf8) <span class="operator">??</span> <span class="string">&quot;&quot;</span></span><br><span class="line">        <span class="keyword">self</span>.jsonRPCRequest <span class="operator">=</span> <span class="type">JSONRPCParser</span>.parseJSONRPCRequest(json)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="第三步：调度层——去重、入队、串行执行"><a href="#第三步：调度层——去重、入队、串行执行" class="headerlink" title="第三步：调度层——去重、入队、串行执行"></a>第三步：调度层——去重、入队、串行执行</h3><p><code>AITaskManager.receiveMCPRequest</code> 在串行队列里完成三件事：</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 1. 去重：同一 id 不重复入队</span></span><br><span class="line"><span class="keyword">if</span> taskArray.first(where: &#123; <span class="variable">$0</span>.request.id <span class="operator">==</span> mcpRequest.id &#125;) <span class="operator">!=</span> <span class="literal">nil</span> &#123; <span class="keyword">return</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 2. 匹配执行器（按 methodName 查找）</span></span><br><span class="line"><span class="keyword">guard</span> <span class="keyword">let</span> executor <span class="operator">=</span> findExecutor(for: <span class="string">&quot;ov_note_write&quot;</span>) <span class="keyword">else</span> &#123; <span class="keyword">return</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 3. 创建 AITask，入队，触发串行消费</span></span><br><span class="line">taskArray.append(<span class="type">AITask</span>(request: mcpRequest, executor: executor, linkType: .rtc))</span><br><span class="line">executeNextTask()</span><br></pre></td></tr></table></figure>
+
+<p><code>executeNextTask</code> 每次只取队列中第一个 <code>waiting</code> 状态的任务执行，执行完成后再触发下一个。这保证了任务顺序，但若某任务长期阻塞（如 BLE 超时），后续任务全部等待——超时保护是必要配套。</p>
+<h3 id="第四步：执行层——路由到-ov-note-write"><a href="#第四步：执行层——路由到-ov-note-write" class="headerlink" title="第四步：执行层——路由到 ov_note_write"></a>第四步：执行层——路由到 ov_note_write</h3><p><code>AITaskExecutor.execute</code> 按 <code>source + methodName</code> 两级路由：</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// source=&quot;app&quot;，methodName=&quot;ov_note_write&quot; → 进入笔记执行分支</span></span><br><span class="line"><span class="keyword">if</span> source <span class="operator">==</span> <span class="string">&quot;app&quot;</span> &#123;</span><br><span class="line">    <span class="keyword">switch</span> methodName &#123;</span><br><span class="line">    <span class="keyword">case</span> <span class="string">&quot;ov_note_write&quot;</span>: executeMemoryTask(task: task, completion: completion)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>executeMemoryTask</code> 的执行逻辑分三个阶段：</p>
+<p><strong>阶段一：前置检查</strong></p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 1. 蓝牙未连接 → 直接失败</span></span><br><span class="line"><span class="keyword">guard</span> glassesManager.connectedDevice() <span class="operator">!=</span> <span class="literal">nil</span> <span class="keyword">else</span> &#123;</span><br><span class="line">    completion(.failure(message: <span class="string">&quot;设备未连接&quot;</span>))</span><br><span class="line">    <span class="keyword">return</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 2. 参数校验</span></span><br><span class="line"><span class="keyword">guard</span> <span class="keyword">let</span> noteId <span class="operator">=</span> request.arguments<span class="operator">?</span>.note_id, <span class="operator">!</span>noteId.isEmpty,</span><br><span class="line">      <span class="keyword">let</span> photoId <span class="operator">=</span> request.arguments<span class="operator">?</span>.photo_id, <span class="operator">!</span>photoId.isEmpty <span class="keyword">else</span> &#123;</span><br><span class="line">    completion(.failure(message: <span class="string">&quot;参数缺失&quot;</span>))</span><br><span class="line">    <span class="keyword">return</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>阶段二：下发 BLE 命令给眼镜</strong></p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> param <span class="operator">=</span> [<span class="string">&quot;file_id&quot;</span>: photoId, <span class="string">&quot;note_id&quot;</span>: noteId]</span><br><span class="line">glassesManager.controlService.sendCommandString(</span><br><span class="line">    <span class="type">COMMAND_UpdateNoteId</span>,</span><br><span class="line">    param: convertDictionaryToJSONString(dict: param) <span class="operator">??</span> <span class="string">&quot;&quot;</span></span><br><span class="line">) &#123; command, status, reason, <span class="keyword">_</span> <span class="keyword">in</span></span><br><span class="line">    <span class="comment">// 等待眼镜 BLE 回调</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>阶段三：双写补偿处理回调</strong></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">眼镜 BLE 回调</span><br><span class="line">    │</span><br><span class="line">    ├─ status == SUCCESS（眼镜写入成功）</span><br><span class="line">    │     ├─ 本地无笔记 → 创建笔记（PhotoNoteService.updatePhotoDataToDB）</span><br><span class="line">    │     ├─ 关联附件（PhotoNoteService.updateAttachment）</span><br><span class="line">    │     └─ completion(.success)</span><br><span class="line">    │</span><br><span class="line">    └─ status != SUCCESS（眼镜写入失败）</span><br><span class="line">          ├─ 本地无图片 → completion(.failure, code: GLASSES_FAILED_CONNECTION_EXCEPTION)</span><br><span class="line">          └─ 本地有图片 → 触发补偿写入</span><br><span class="line">                ├─ 创建笔记</span><br><span class="line">                ├─ 关联附件</span><br><span class="line">                └─ completion(.success)  ← 对 AI 侧透明，依然返回成功</span><br></pre></td></tr></table></figure>
+
+<p>补偿写入的两个操作：</p>
+<ul>
+<li><p><strong><code>PhotoNoteService.updatePhotoDataToDB</code></strong>：调 <code>NoteManager.createAttachmentNote</code> 在 WCDB 写入笔记记录，<code>source</code> 标记为 <code>image_chat</code>（AI 对话产生），写完后发本地通知刷新 UI。</p>
+</li>
+<li><p><strong><code>PhotoNoteService.updateAttachment</code></strong>：从图库缓存拿到图片模型，读取笔记的 <code>attachmentId</code>，构造 <code>WCDBAttachmentModel</code> 写入附件表，<code>status</code> 标记为 <code>uploading</code>（等待后续上传任务处理）。</p>
+</li>
+</ul>
+<h3 id="第五步：响应构造"><a href="#第五步：响应构造" class="headerlink" title="第五步：响应构造"></a>第五步：响应构造</h3><p>执行完成后，调度层调用 <code>getMemoryResponse</code> 生成响应：</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> content <span class="operator">=</span> <span class="type">JSONRPCParser</span>.createGlassesCommonResponseContent(</span><br><span class="line">    requestId: task.request.requestId,   <span class="comment">// 对应请求的 JSON-RPC id</span></span><br><span class="line">    param: resultData                     <span class="comment">// 业务数据</span></span><br><span class="line">)</span><br><span class="line"><span class="keyword">let</span> response <span class="operator">=</span> <span class="type">MCPResponse</span>.success(mcpRequest: task.request, content: content)</span><br></pre></td></tr></table></figure>
+
+<p>构造出的 JSON-RPC 响应格式：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;jsonrpc&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2.0&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;id&quot;</span><span class="punctuation">:</span> <span class="number">42</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;result&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;structuredContent&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;code&quot;</span><span class="punctuation">:</span> <span class="string">&quot;SUCCESS&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;msg&quot;</span><span class="punctuation">:</span> <span class="string">&quot;&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;data&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;note_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;550e8400-e29b-41d4-a716-446655440000&quot;</span></span><br><span class="line">      <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>若失败（蓝牙断连且本地无图片），则返回标准 JSON-RPC error：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;jsonrpc&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2.0&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;id&quot;</span><span class="punctuation">:</span> <span class="number">42</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;error&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;code&quot;</span><span class="punctuation">:</span> <span class="number">-32603</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;message&quot;</span><span class="punctuation">:</span> <span class="string">&quot;GLASSES_FAILED_CONNECTION_EXCEPTION&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="第六步：响应回传"><a href="#第六步：响应回传" class="headerlink" title="第六步：响应回传"></a>第六步：响应回传</h3><figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// MCPResponse → protobuf → RTC 发回</span></span><br><span class="line"><span class="keyword">if</span> task.linkType <span class="operator">==</span> .rtc &#123;</span><br><span class="line">    <span class="type">SSAIRtcChatDynamic</span>.shared.pushMessage(mcpResponse: mcpResponse)</span><br><span class="line">&#125; <span class="keyword">else</span> <span class="keyword">if</span> task.linkType <span class="operator">==</span> .gRPC &#123;</span><br><span class="line">    <span class="type">NotificationCenter</span>.default.post(</span><br><span class="line">        name: .<span class="type">SendMcpResponseForGRPC</span>,</span><br><span class="line">        object: <span class="literal">nil</span>,</span><br><span class="line">        userInfo: [<span class="string">&quot;mcpResponse&quot;</span>: mcpResponse, <span class="string">&quot;topicId&quot;</span>: task.topicId]</span><br><span class="line">    )</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>RTC 路径下，<code>MCPResponse</code> 经 protobuf 序列化包装成 <code>GPBAny</code>，再封入 <code>RTCSDKUnaryMessage</code>，通过 RTC RTM 通道推回 AI 后端。AI 收到响应后，继续后续的对话推理。</p>
+<h3 id="链路全貌"><a href="#链路全貌" class="headerlink" title="链路全貌"></a>链路全貌</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line">AI 后端</span><br><span class="line">  │ RTC 推送 MCPRequestTransportData（protobuf）</span><br><span class="line">  ▼</span><br><span class="line">SSAIRtcChatDynamic.rtcOnMcpRequestReceived</span><br><span class="line">  │ 转交</span><br><span class="line">  ▼</span><br><span class="line">GlassesService.handleMCPRequest</span><br><span class="line">  │ 转交</span><br><span class="line">  ▼</span><br><span class="line">AITaskManager.receiveMCPRequest</span><br><span class="line">  ├─ 解包 protobuf → MCPRequest（两次解析）</span><br><span class="line">  ├─ 去重（id 判重）</span><br><span class="line">  ├─ 匹配执行器（ov_note_write → MemoryExecutor）</span><br><span class="line">  └─ 入队 → executeNextTask（串行）</span><br><span class="line">              │</span><br><span class="line">              ▼</span><br><span class="line">         AITaskExecutor.execute</span><br><span class="line">           source=&quot;app&quot; + methodName=&quot;ov_note_write&quot;</span><br><span class="line">              │</span><br><span class="line">              ▼</span><br><span class="line">         executeMemoryTask</span><br><span class="line">           ├─ 前置校验（BLE 连接 + 参数）</span><br><span class="line">           ├─ BLE 下发 COMMAND_UpdateNoteId</span><br><span class="line">           └─ 等待眼镜回调</span><br><span class="line">               ├─ 成功 → 创建/更新本地笔记 + 关联附件</span><br><span class="line">               └─ 失败 + 本地有图 → 双写补偿（同上）</span><br><span class="line">              │</span><br><span class="line">              ▼</span><br><span class="line">         handleTaskResult</span><br><span class="line">           ├─ 构造 JSON-RPC 响应（success / error）</span><br><span class="line">           ├─ sendResponse → RTC/gRPC 回传</span><br><span class="line">           └─ 移除任务 → 执行队列下一个</span><br><span class="line">              │</span><br><span class="line">              ▼</span><br><span class="line">AI 后端（收到 MCP response，继续推理）</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="六、各业务域深度分析"><a href="#六、各业务域深度分析" class="headerlink" title="六、各业务域深度分析"></a>六、各业务域深度分析</h2><h3 id="A-眼镜控制：跨链路的媒体流处理"><a href="#A-眼镜控制：跨链路的媒体流处理" class="headerlink" title="A. 眼镜控制：跨链路的媒体流处理"></a>A. 眼镜控制：跨链路的媒体流处理</h3><p><strong>fetch_image</strong> 是整个模块里链路最长、最「重」的一个流程：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">MCP 请求</span><br><span class="line">  → BLE 发送拍照命令（携带 sessionId）</span><br><span class="line">  → SessionServer 接收图片流（流式传输，分包，非单次回调）</span><br><span class="line">  → 累积包直到收到 EndPackage</span><br><span class="line">  → 上传至对象存储，获取图片 URL</span><br><span class="line">  → 返回图片 URL + 尺寸</span><br><span class="line">  → 发本地通知触发 UI 展示</span><br></pre></td></tr></table></figure>
+
+<p>这个流程跨越了 BLE、TCP 流、云存储三个异构通道，任何一环出问题都可能导致请求超时或静默失败。当前没有超时保护，是风险最集中的地方。</p>
+<p><strong>app_phone_call</strong> 是「App 前处理 + 硬件侧执行」的混合工具：</p>
+<ol>
+<li>App 侧查通讯录，做姓名精确匹配（大小写不敏感）</li>
+<li>匹配到唯一联系人后，构造拨号命令</li>
+<li>通过 BLE 把命令转发给眼镜执行</li>
+</ol>
+<p>精确匹配逻辑里有三种情况需要特殊处理：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">找到 0 个 → 返回 GLASSES_FAILED_NO_CONTACTS，让 AI 重新提问</span><br><span class="line">找到 1 个 → 继续执行拨号</span><br><span class="line">找到 2+ 个 → 返回 GLASSES_FAILED_MULTIPLE_CONTACTS，让 AI 让用户区分</span><br></pre></td></tr></table></figure>
+
+<p><strong>这种「能力边界」设计值得借鉴</strong>——工具本身不做模糊推断，把歧义还给 AI 去处理，AI 再通过对话澄清。这符合 MCP 工具的设计哲学：工具要么成功执行，要么返回明确的错误类型，不做「聪明的猜测」。</p>
+<p><strong>通用镜控</strong>（音量、录音、相机等）是透传模式：直接把 JSON-RPC 的 params 序列化后下发眼镜，眼镜侧处理并返回字符串结果，App 侧直接透传。这种设计灵活、统一，代价是 App 侧缺少参数校验，协议稳定性强依赖硬件固件端。</p>
+<h3 id="B-车控：长事务的多阶段回包设计"><a href="#B-车控：长事务的多阶段回包设计" class="headerlink" title="B. 车控：长事务的多阶段回包设计"></a>B. 车控：长事务的多阶段回包设计</h3><p>车控是整个模块里设计最特殊的业务域，因为它是一个<strong>长事务</strong>。</p>
+<p>发出「关闭车窗」命令后，不是立刻返回最终结果，而是：</p>
+<ol>
+<li>先获得一个 <code>jobId</code>（任务单号）</li>
+<li>通过主回调返回「命令已下发」的初始响应（MCP 层面任务完成）</li>
+<li>通过独立的上报回调持续接收状态更新（执行中&#x2F;执行完成&#x2F;执行失败）</li>
+</ol>
+<p>代码里这三类回调分工清晰：</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// a) jobId 回调：写回任务对象，用于后续关联查询</span></span><br><span class="line">onJobId: &#123; jobId <span class="keyword">in</span></span><br><span class="line">    task.jobId <span class="operator">=</span> jobId</span><br><span class="line">    taskManager.updateTask(task: task)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// b) 主完成回调：MCP 层面的初始响应，任务就此「完成」</span></span><br><span class="line">onCompletion: &#123; result <span class="keyword">in</span></span><br><span class="line">    completion(result)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// c) 上报回调：后续状态增量上报，独立发送，不经过任务队列</span></span><br><span class="line">onReport: &#123; updateData <span class="keyword">in</span></span><br><span class="line">    <span class="keyword">let</span> response <span class="operator">=</span> getVehicleResponse(task: task, data: updateData)</span><br><span class="line">    updateVehicleMcpResult(mcpResponse: response)  <span class="comment">// 直接通过 gRPC 额外推送</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个设计能用，但任务模型本身并不「知道」这是一个多阶段任务，<code>jobId</code> 只是作为扩展字段挂在 <code>AITask</code> 上。<strong>如果后续车控场景更复杂，这里需要一个更明确的「长任务」任务类型。</strong></p>
+<h3 id="C-音乐业务：搜索-→-匹配-→-播放卡的完整状态链"><a href="#C-音乐业务：搜索-→-匹配-→-播放卡的完整状态链" class="headerlink" title="C. 音乐业务：搜索 → 匹配 → 播放卡的完整状态链"></a>C. 音乐业务：搜索 → 匹配 → 播放卡的完整状态链</h3><p>音乐搜索（<code>media_search</code>）是业务逻辑最复杂的一支：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">接收请求（歌曲名 / 歌手 / 专辑 / tag）</span><br><span class="line">  → 场景推导（dealSceneResultParagram）：按参数组合推导 mediaType</span><br><span class="line">  → 调音乐 SDK 搜索</span><br><span class="line">  → 封面预加载（Kingfisher 预取）</span><br><span class="line">  → 「完美匹配」算法确定起播歌曲</span><br><span class="line">  → 同步拉取第一首歌播放地址（阻塞，保证首播）</span><br><span class="line">  → 创建/更新播放器 ViewModel 和播放卡片</span><br><span class="line">  → 异步补全剩余歌曲播放地址（不阻塞）</span><br><span class="line">  → 返回 MCP 响应（含 enable_tts 信号）</span><br></pre></td></tr></table></figure>
+
+<p><strong>场景推导（dealSceneResultParagram）</strong> 是这里最有意思的逻辑。AI 下发的参数组合有多种：只有歌曲名、只有歌手名、歌手+歌曲名、全部都有…… 需要映射到不同的 <code>mediaType</code>（1&#x3D;歌曲、2&#x3D;专辑、3&#x3D;歌手、0&#x3D;泛词）。代码里维护了一张「参数组合 → 搜索场景」的决策矩阵：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">非空参数数量 = 1:</span><br><span class="line">  只有 singer → mediaType = 3（按歌手搜）</span><br><span class="line">  只有 album  → mediaType = 2（按专辑搜）</span><br><span class="line">  只有 title  → mediaType = 1（按歌名搜）</span><br><span class="line">  只有 tag    → mediaType = 0（泛词搜索）</span><br><span class="line"></span><br><span class="line">非空参数数量 = 2:</span><br><span class="line">  singer + title → mediaType = 1（歌名优先）</span><br><span class="line">  singer + album → mediaType = 2（专辑优先）</span><br><span class="line">  ...</span><br></pre></td></tr></table></figure>
+
+<p><strong>「完美匹配」优先级</strong>：搜索返回多首歌时，不是直接播第一首，而是按「歌曲名 + 歌手 + 专辑」的匹配程度计算优先级，选最匹配的作为起播曲。匹配规则：</p>
+<ul>
+<li>歌名：完全一致 or 包含关系</li>
+<li>专辑：完全一致</li>
+<li>歌手：双向全包含（处理多位艺术家用 <code>&amp;</code> 连接的情况）</li>
+</ul>
+<p><strong>延迟补全播放地址</strong>：首首歌的 URL 同步拉取（阻塞 completion），后续歌曲异步补全。这是「先可用、再完整」的典型取舍——用户最快听到第一首，歌单在后台悄悄填充。</p>
+<p><strong>播放状态存储在执行器上</strong>（这是一个设计问题，后面专门讨论）：</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// ⚠️ 通过 objc_setAssociatedObject 把状态挂在 executor 上</span></span><br><span class="line"><span class="keyword">var</span> musicList: [<span class="type">MusicInfoModel</span>] &#123;</span><br><span class="line">    <span class="keyword">get</span> &#123; objc_getAssociatedObject(<span class="keyword">self</span>, <span class="operator">&amp;</span>itemsKey) <span class="keyword">as?</span> [<span class="type">MusicInfoModel</span>] <span class="operator">??</span> [] &#125;</span><br><span class="line">    <span class="keyword">set</span> &#123; objc_setAssociatedObject(<span class="keyword">self</span>, <span class="operator">&amp;</span>itemsKey, newValue, .<span class="type">OBJC_ASSOCIATION_RETAIN_NONATOMIC</span>) &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> viewModel: <span class="type">PlayerViewModel</span>? &#123;</span><br><span class="line">    <span class="keyword">get</span> &#123; objc_getAssociatedObject(<span class="keyword">self</span>, <span class="operator">&amp;</span>viewModelKey) <span class="keyword">as?</span> <span class="type">PlayerViewModel</span> &#125;</span><br><span class="line">    <span class="keyword">set</span> &#123; objc_setAssociatedObject(<span class="keyword">self</span>, <span class="operator">&amp;</span>viewModelKey, newValue, .<span class="type">OBJC_ASSOCIATION_RETAIN_NONATOMIC</span>) &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>音乐播控（<code>app_playback_control</code>）支持快进&#x2F;快退&#x2F;定位&#x2F;收藏&#x2F;切换播放模式&#x2F;歌单起播，其中进度控制的解析逻辑比较细致：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&quot;+10&quot;   → 快进 10 秒（相对当前）</span><br><span class="line">&quot;-10&quot;   → 快退 10 秒（相对当前）</span><br><span class="line">&quot;120&quot;   → 定位到第 120 秒（绝对位置）</span><br><span class="line">&quot;+20%&quot;  → 快进总时长的 20%（相对百分比）</span><br><span class="line">&quot;20%&quot;   → 定位到总时长的 20%（绝对百分比）</span><br></pre></td></tr></table></figure>
+
+<p>结合当前播放时间和总时长计算新进度，超出边界时自动切曲。</p>
+<h3 id="D-笔记业务：双写补偿策略"><a href="#D-笔记业务：双写补偿策略" class="headerlink" title="D. 笔记业务：双写补偿策略"></a>D. 笔记业务：双写补偿策略</h3><p>笔记记录（<code>ov_note_write</code>）的核心挑战在于：<strong>眼镜侧的状态和 App 本地数据侧的状态需要保持一致</strong>，但这两个写入是异步的、可能局部失败的。</p>
+<p>策略是：</p>
+<ul>
+<li>主路径：下发命令让眼镜记录 <code>note_id</code>（写入眼镜端）</li>
+<li>补偿路径：无论眼镜回调成功还是失败，只要本地有对应的图库资源，就在 App 侧做补偿写入（创建笔记、挂载附件）</li>
+</ul>
+<p>这是一种<strong>双写补偿策略</strong>：眼镜侧写入为主，App 本地做兜底一致性保证。这在「设备端 + 云端」协作的场景里很常见，比分布式系统里的 Saga 模式轻量很多，但核心思路一致——局部失败不影响整体最终一致。</p>
+<h2 id="七、响应构造的双向适配器模式"><a href="#七、响应构造的双向适配器模式" class="headerlink" title="七、响应构造的双向适配器模式"></a>七、响应构造的双向适配器模式</h2><p>整个请求执行流程里有两次分发：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">execute(task)      →  「请求分发」：按 source + method 路由到业务执行</span><br><span class="line">getResponse(task)  →  「响应分发」：按 method 构造对应格式的 JSON-RPC 响应</span><br></pre></td></tr></table></figure>
+
+<p>这是一种<strong>双向适配器（Bidirectional Adapter）</strong> 设计——进来的时候统一解包，出去的时候按类型重新封装。</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">getResponse</span>(<span class="params">task</span>: <span class="type">AITask</span>, <span class="params">result</span>: <span class="type">AITaskResult</span>) -&gt; <span class="type">MCPResponse</span> &#123;</span><br><span class="line">    <span class="keyword">switch</span> result.state &#123;</span><br><span class="line">    <span class="keyword">case</span> .success:</span><br><span class="line">        <span class="keyword">switch</span> methodName &#123;</span><br><span class="line">        <span class="keyword">case</span> <span class="string">&quot;fetch_image&quot;</span>:</span><br><span class="line">            <span class="keyword">return</span> getFetchImageResponse(task: task, data: data)</span><br><span class="line">        <span class="keyword">case</span> <span class="string">&quot;vehicle_control&quot;</span>, <span class="string">&quot;charge_control&quot;</span>:</span><br><span class="line">            <span class="keyword">return</span> getVehicleResponse(task: task, data: data)</span><br><span class="line">        <span class="keyword">case</span> <span class="string">&quot;media_search&quot;</span>:</span><br><span class="line">            <span class="keyword">return</span> getMusicSearchResponse(task: task, data: data)</span><br><span class="line">        <span class="keyword">case</span> <span class="string">&quot;app_playback_control&quot;</span>:</span><br><span class="line">            <span class="keyword">return</span> getMusicControlResponse(task: task, data: data)</span><br><span class="line">        <span class="keyword">default</span>:</span><br><span class="line">            <span class="comment">// 通用镜控响应</span></span><br><span class="line">            <span class="keyword">return</span> getGlassesControlCommonResponse(task: task, data: data)</span><br><span class="line">        &#125;</span><br><span class="line">    <span class="keyword">case</span> .failed, .timeout:</span><br><span class="line">        <span class="keyword">return</span> <span class="type">MCPResponse</span>.failure(mcpRequest: task.request, message: result.message)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>响应构造器集中在 <code>JSONRPCParser</code> 里，提供各类 builder 方法：</p>
+<ul>
+<li>图片响应（含 URL、MIME 类型、尺寸）</li>
+<li>通用硬件控制响应（透传硬件返回的 param dict）</li>
+<li>车控响应（包装 SDK 返回的 data 字段）</li>
+<li>切换设备响应</li>
+<li>权限查询响应</li>
+<li>笔记写入响应</li>
+<li>音乐搜索响应</li>
+<li>失败响应（标准 JSON-RPC error 结构）</li>
+</ul>
+<p>集中封装的好处是：<strong>业务层只需要关心返回什么数据，不必自己拼完整的 JSON-RPC 协议壳。</strong></p>
+<h2 id="八、一句话总结"><a href="#八、一句话总结" class="headerlink" title="八、一句话总结"></a>八、一句话总结</h2><blockquote>
+<p>这套模块是 iOS 端面向 AI 系统的 MCP 协议执行中枢，负责能力声明、请求解析、任务调度、业务路由、结果回包，以及语音会话退出策略的联动。</p>
+</blockquote>
+<p>通俗讲：<strong>「AI 发命令 → App 执行 → 按 MCP 协议把结果回给 AI」的总中台。</strong></p>
+<p>这类「协议网关 + 多业务路由」的架构模式，不只出现在 AI Agent 场景里。凡是需要在移动端把一个统一上游协议分发到多个异构业务域的场景，都可以借鉴这套分层思路：协议层负责解析封装、调度层负责生命周期、执行层按域拆分、能力描述层对外声明。</p>
+<p>核心要点是<strong>保持层间的职责边界清晰</strong>——一旦某一层开始承担太多职责（比如执行器既路由又存状态又控 UI），整体可维护性就会快速下降。这是所有「网关类」架构最容易踩的坑，也是从这套实现里最值得带走的教训。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>DCH
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://dcheric.github.io/2026/04/08/ios-mcp-architecture-design/" title="iOS 端 MCP 协议网关的架构设计：从协议适配到多业务域路由">https://dcheric.github.io/2026/04/08/ios-mcp-architecture-design/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/iOS/" rel="tag"><i class="fa fa-tag"></i> iOS</a>
+              <a href="/tags/MCP/" rel="tag"><i class="fa fa-tag"></i> MCP</a>
+              <a href="/tags/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" rel="tag"><i class="fa fa-tag"></i> 架构设计</a>
+              <a href="/tags/%E5%8D%8F%E8%AE%AE%E7%BD%91%E5%85%B3/" rel="tag"><i class="fa fa-tag"></i> 协议网关</a>
+              <a href="/tags/AI-Agent/" rel="tag"><i class="fa fa-tag"></i> AI Agent</a>
+              <a href="/tags/%E4%BB%BB%E5%8A%A1%E8%B0%83%E5%BA%A6/" rel="tag"><i class="fa fa-tag"></i> 任务调度</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/04/07/ai-engineering-paradigm-evolution/" rel="prev" title="AI工程范式的三次演化：Prompt Engineering → Context Engineering → Harness Engineering">
+                  <i class="fa fa-angle-left"></i> AI工程范式的三次演化：Prompt Engineering → Context Engineering → Harness Engineering
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    <div class="comments utterances-container"></div>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">DCH</span>
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+<script class="next-config" data-name="utterances" type="application/json">{"enable":true,"repo":"DCHEric/DCHEric.github.io","issue_term":"pathname","theme":"preferred-color-scheme","label":"comment"}</script>
+<script src="/js/third-party/comments/utterances.js" defer></script>
+<script src="/js/darkmode-toggle.js"></script>
+
+</body>
+</html>
