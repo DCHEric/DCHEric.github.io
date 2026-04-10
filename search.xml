@@ -2212,15 +2212,20 @@
 <p>这些问题表面上看是“播报问题”，本质上其实是 <strong>实时体验编排问题</strong>。</p>
 <hr>
 <h2 id="三、一个可落地的-TTS-架构，应该怎么分层"><a href="#三、一个可落地的-TTS-架构，应该怎么分层" class="headerlink" title="三、一个可落地的 TTS 架构，应该怎么分层"></a>三、一个可落地的 TTS 架构，应该怎么分层</h2><p>为了让 TTS 从“能力点”升级为“业务系统”，我们最终把它拆成了四层。</p>
-<pre class="mermaid">flowchart TD
+<pre>
+<code class="mermaid">
+
+flowchart TD
     A[业务触发层]
     B[TTS 编排层]
     C[合成与播放层]
     D[系统与设备协同层]
 
-    A --> B
-    B --> C
-    C --> D</pre>
+    A --&gt; B
+    B --&gt; C
+    C --&gt; D
+</code>
+</pre>
 
 <h3 id="1-业务触发层"><a href="#1-业务触发层" class="headerlink" title="1. 业务触发层"></a>1. 业务触发层</h3><p>这一层决定“什么时候该播”。</p>
 <p>比如：</p>
