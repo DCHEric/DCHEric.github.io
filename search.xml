@@ -2166,4 +2166,509 @@
         <tag>音视频架构</tag>
       </tags>
   </entry>
+  <entry>
+    <title>从&quot;文本朗读&quot;到&quot;实时语音反馈&quot;：一套移动端 TTS 业务架构实践</title>
+    <url>/2026/04/10/TTS/</url>
+    <content><![CDATA[<h1 id="从”文本朗读”到”实时语音反馈”：一套移动端-TTS-业务架构实践"><a href="#从”文本朗读”到”实时语音反馈”：一套移动端-TTS-业务架构实践" class="headerlink" title="从”文本朗读”到”实时语音反馈”：一套移动端 TTS 业务架构实践"></a>从”文本朗读”到”实时语音反馈”：一套移动端 TTS 业务架构实践</h1><p>在很多产品里，TTS（Text To Speech）常常被理解成一个相对简单的能力：拿到一段文本，转成音频，然后播放出来。</p>
+<p>但当产品进入 AIGC、实时问答、语音助手、播客消费、可穿戴设备这些场景后，TTS 的角色会迅速变化。它不再只是一个“朗读器”，而开始承担起 <strong>实时反馈、状态编排、音频协同、设备打断、体验连续性优化</strong> 等更复杂的职责。</p>
+<p>在我们的客户端实践里，TTS 最终演变成了一套围绕“实时 AI 交互”组织起来的系统能力。本文不展开源码细节，而是从业务与架构视角，分享这套 TTS 体系是如何设计出来的，以及它解决了哪些真实问题。</p>
+<hr>
+<h2 id="一、为什么今天的-TTS-不能只被当作“朗读能力”"><a href="#一、为什么今天的-TTS-不能只被当作“朗读能力”" class="headerlink" title="一、为什么今天的 TTS 不能只被当作“朗读能力”"></a>一、为什么今天的 TTS 不能只被当作“朗读能力”</h2><p>如果只是做文章阅读、消息播报，传统 TTS 的工作方式通常是：</p>
+<ol>
+<li>准备一段完整文本；</li>
+<li>调用语音合成接口；</li>
+<li>拿到完整音频；</li>
+<li>播放结束。</li>
+</ol>
+<p>这种模型很适合离线、单次、低交互的内容播报。</p>
+<p>但在 AIGC 场景里，用户的感知路径已经变成了：</p>
+<blockquote>
+<p>用户提问 → 模型流式生成回答 → 回答一边出现，一边播报 → 用户可随时打断 → 系统再进入下一轮交互</p>
+</blockquote>
+<p>一旦交互链路变成这样，TTS 需要面对的问题就完全不同了：</p>
+<ul>
+<li>文本不是一次性返回，而是流式增长；</li>
+<li>播报不能等全部生成完再开始，否则反馈太慢；</li>
+<li>播放时要和 ASR、音频会话、音乐播放、外设收音互相协调；</li>
+<li>播报过程中用户可能会打断；</li>
+<li>在播客、多角色内容中，还要兼顾连续性和听感。</li>
+</ul>
+<p>所以，真正支撑用户体验的，已经不只是“会不会读”，而是：</p>
+<blockquote>
+<p><strong>TTS 能不能成为实时 AI 交互中的一个自然反馈环节。</strong></p>
+</blockquote>
+<hr>
+<h2 id="二、我们到底在解决什么问题"><a href="#二、我们到底在解决什么问题" class="headerlink" title="二、我们到底在解决什么问题"></a>二、我们到底在解决什么问题</h2><p>把 TTS 放进真实业务里，最常见的问题通常来自以下几个方面。</p>
+<h3 id="1-反馈太慢"><a href="#1-反馈太慢" class="headerlink" title="1. 反馈太慢"></a>1. 反馈太慢</h3><p>如果必须等整段回答结束才开始播报，用户会明显感觉系统“在思考”，而不是“在对话”。</p>
+<h3 id="2-半句、重复、漏播"><a href="#2-半句、重复、漏播" class="headerlink" title="2. 半句、重复、漏播"></a>2. 半句、重复、漏播</h3><p>大模型流式返回时，文本往往是不断变长的整段内容，而不是天然按句增量返回。如果直接拿流式文本去播，很容易出现：</p>
+<ul>
+<li>半句就开始读；</li>
+<li>同一段内容重复读；</li>
+<li>尾句因为 <code>isFinal</code> 时机不同而漏播。</li>
+</ul>
+<h3 id="3-播放和收音打架"><a href="#3-播放和收音打架" class="headerlink" title="3. 播放和收音打架"></a>3. 播放和收音打架</h3><p>在语音问答场景里，如果播报时收音还开着，就可能出现“自己说给自己听”的问题，造成误触发或识别污染。</p>
+<h3 id="4-打断不彻底"><a href="#4-打断不彻底" class="headerlink" title="4. 打断不彻底"></a>4. 打断不彻底</h3><p>用户打断上一轮回复后，如果只是停本地播放器，但设备端或链路侧还积压着旧音频 buffer，残音仍然会被听到，体验会非常差。</p>
+<h3 id="5-多业务并存时资源冲突"><a href="#5-多业务并存时资源冲突" class="headerlink" title="5. 多业务并存时资源冲突"></a>5. 多业务并存时资源冲突</h3><p>当问答、播客、音乐、眼镜等场景共存时，谁该优先播、谁该暂停、谁该接管音频通道，必须有明确策略。</p>
+<p>这些问题表面上看是“播报问题”，本质上其实是 <strong>实时体验编排问题</strong>。</p>
+<hr>
+<h2 id="三、一个可落地的-TTS-架构，应该怎么分层"><a href="#三、一个可落地的-TTS-架构，应该怎么分层" class="headerlink" title="三、一个可落地的 TTS 架构，应该怎么分层"></a>三、一个可落地的 TTS 架构，应该怎么分层</h2><p>为了让 TTS 从“能力点”升级为“业务系统”，我们最终把它拆成了四层。</p>
+<pre class="mermaid">flowchart TD
+    A[业务触发层]
+    B[TTS 编排层]
+    C[合成与播放层]
+    D[系统与设备协同层]
+
+    A --> B
+    B --> C
+    C --> D</pre>
+
+<h3 id="1-业务触发层"><a href="#1-业务触发层" class="headerlink" title="1. 业务触发层"></a>1. 业务触发层</h3><p>这一层决定“什么时候该播”。</p>
+<p>比如：</p>
+<ul>
+<li>AIGC 问答回答是否需要自动朗读；</li>
+<li>用户是否主动点击播放；</li>
+<li>当前是不是语音对话态；</li>
+<li>当前是否处于后台、跳转态或外设占用态。</li>
+</ul>
+<p>这一层的核心目标不是发音，而是 <strong>做业务判断和资源仲裁</strong>。</p>
+<h3 id="2-TTS-编排层"><a href="#2-TTS-编排层" class="headerlink" title="2. TTS 编排层"></a>2. TTS 编排层</h3><p>这是整套体系的关键。它负责：</p>
+<ul>
+<li>流式文本增量处理；</li>
+<li>句子切分；</li>
+<li>合成请求调度；</li>
+<li>播放状态推进；</li>
+<li>打断与重置；</li>
+<li>针对不同场景采取不同策略。</li>
+</ul>
+<p>如果说业务层决定“要不要播”，那么编排层决定的是：</p>
+<blockquote>
+<p><strong>怎么播、播到哪、下一句什么时候进来、出了问题怎么处理。</strong></p>
+</blockquote>
+<h3 id="3-合成与播放层"><a href="#3-合成与播放层" class="headerlink" title="3. 合成与播放层"></a>3. 合成与播放层</h3><p>这一层做两件事：</p>
+<ul>
+<li>把文本转换为流式音频；</li>
+<li>把音频平滑地播放出来。</li>
+</ul>
+<p>这里最重要的不是单次播放，而是要支持：</p>
+<ul>
+<li>边收边播；</li>
+<li>按句推进；</li>
+<li>精确知道当前播到哪里；</li>
+<li>为上层提供“准备播放 &#x2F; 播放中 &#x2F; 播放结束 &#x2F; 失败”等状态。</li>
+</ul>
+<h3 id="4-系统与设备协同层"><a href="#4-系统与设备协同层" class="headerlink" title="4. 系统与设备协同层"></a>4. 系统与设备协同层</h3><p>这一层处理更贴近终端真实环境的问题：</p>
+<ul>
+<li>音频会话切换；</li>
+<li>电话&#x2F;系统打断恢复；</li>
+<li>音乐共存；</li>
+<li>蓝牙耳机路由；</li>
+<li>外设缓冲清理；</li>
+<li>RTC 下行音频接力。</li>
+</ul>
+<p>它决定了这套 TTS 能不能在真实设备上稳定工作，而不是只在理想流程里跑通。</p>
+<hr>
+<h2 id="四、AIGC-IM-场景下，TTS-为什么必须是“流式”的"><a href="#四、AIGC-IM-场景下，TTS-为什么必须是“流式”的" class="headerlink" title="四、AIGC &#x2F; IM 场景下，TTS 为什么必须是“流式”的"></a>四、AIGC &#x2F; IM 场景下，TTS 为什么必须是“流式”的</h2><p>这是最能代表当前 TTS 变化的场景。</p>
+<p>设想一个用户在 IM 问答页提问：</p>
+<blockquote>
+<p>“帮我介绍下目前 AI Agent 的发展。”</p>
+</blockquote>
+<p>云端模型不会一次性返回完整回答，而更可能像这样流式输出：</p>
+<ol>
+<li><code>AI Agent 正从单轮问答能力，</code></li>
+<li><code>AI Agent 正从单轮问答能力，逐步发展为具备规划、调用工具和执行复杂任务的智能体系统。</code></li>
+<li>第 3 包文本不再增长，但会携带“本轮结束”的信号。</li>
+</ol>
+<p>这时如果客户端直接把每一包文本都丢给播放器，会产生两个问题：</p>
+<ul>
+<li>第二包会把第一包内容重复播一遍；</li>
+<li>尾包可能没有新增文本，但又必须保证这轮播报被正确收尾。</li>
+</ul>
+<p>因此，我们在 TTS 编排层里做了三件关键事情。</p>
+<h3 id="1-只处理“新增文本”"><a href="#1-只处理“新增文本”" class="headerlink" title="1. 只处理“新增文本”"></a>1. 只处理“新增文本”</h3><p>不是拿整段文本直接播，而是和上一轮文本做比较，只提取这次真正新增的部分。</p>
+<h3 id="2-只在“适合播”的时候入队"><a href="#2-只在“适合播”的时候入队" class="headerlink" title="2. 只在“适合播”的时候入队"></a>2. 只在“适合播”的时候入队</h3><p>新增内容还要继续经过过滤：</p>
+<ul>
+<li>纯换行不播；</li>
+<li>纯标点不播；</li>
+<li>半句暂缓，等后续内容补齐。</li>
+</ul>
+<h3 id="3-用尾包信号做收尾补偿"><a href="#3-用尾包信号做收尾补偿" class="headerlink" title="3. 用尾包信号做收尾补偿"></a>3. 用尾包信号做收尾补偿</h3><p>最后一包即使没有继续增长，也要让系统知道：</p>
+<ul>
+<li>本轮回答已经结束；</li>
+<li>如果还有尾句没播，需要补齐；</li>
+<li>整轮播报结束后，状态要回到空闲态。</li>
+</ul>
+<p>从用户角度看，这意味着系统表现出来的是：</p>
+<blockquote>
+<p>回答不是“一下子说完”，而是像真人一样，边组织语言边开始反馈。</p>
+</blockquote>
+<p>这正是“实时感”的来源。</p>
+<hr>
+<h2 id="五、一个真实的-AIGC-IM-播报流程，应该长什么样"><a href="#五、一个真实的-AIGC-IM-播报流程，应该长什么样" class="headerlink" title="五、一个真实的 AIGC &#x2F; IM 播报流程，应该长什么样"></a>五、一个真实的 AIGC &#x2F; IM 播报流程，应该长什么样</h2><p>为了更直观地理解这套设计，我们把整个流程还原成一条业务链路。</p>
+<h3 id="阶段一：业务层决定是否可以播"><a href="#阶段一：业务层决定是否可以播" class="headerlink" title="阶段一：业务层决定是否可以播"></a>阶段一：业务层决定是否可以播</h3><p>当 AIGC 响应开始流式返回时，业务层首先不会急着播，而会判断：</p>
+<ul>
+<li>当前用户是否开启了语音播报；</li>
+<li>当前是不是游客模式；</li>
+<li>是否存在外设正在占用播报能力；</li>
+<li>当前页面是否处于适合播报的前台场景；</li>
+<li>当前是否需要等待更高优先级的展示逻辑完成。</li>
+</ul>
+<p>也就是说，TTS 的第一步不是合成，而是 <strong>做选择</strong>。</p>
+<h3 id="阶段二：流式文本进入-TTS-编排层"><a href="#阶段二：流式文本进入-TTS-编排层" class="headerlink" title="阶段二：流式文本进入 TTS 编排层"></a>阶段二：流式文本进入 TTS 编排层</h3><p>一旦业务层判断“可以播”，文本就会进入编排层。</p>
+<p>此时编排层并不会把整段文本立即送去合成，而是会：</p>
+<ol>
+<li>对比上一轮已处理文本；</li>
+<li>提取新增部分；</li>
+<li>判断是否为有效句子；</li>
+<li>把可播内容拆成句子，放入待合成队列。</li>
+</ol>
+<p>这一步实际上把“模型文本流”转换成了“播报任务流”。</p>
+<h3 id="阶段三：句子级流式合成启动"><a href="#阶段三：句子级流式合成启动" class="headerlink" title="阶段三：句子级流式合成启动"></a>阶段三：句子级流式合成启动</h3><p>待播句子一旦准备好，就会启动流式合成会话。</p>
+<p>这里和传统 TTS 最大的不同是：</p>
+<ul>
+<li>不是一段文本对应一个完整音频文件；</li>
+<li>而是一句句文本逐步送入；</li>
+<li>音频也会一点点返回。</li>
+</ul>
+<p>因此整个过程更像“推流 + 拉流”的组合，而不是“请求 + 下载”。</p>
+<h3 id="阶段四：音频边回边播"><a href="#阶段四：音频边回边播" class="headerlink" title="阶段四：音频边回边播"></a>阶段四：音频边回边播</h3><p>当音频开始回流后，播放层会立即将其送入缓冲队列，驱动本地播放器开始输出。</p>
+<p>这时 TTS 不再是“离线产物”，而成了一个实时媒体流。</p>
+<p>它带来的好处很直接：</p>
+<ul>
+<li>首次语音反馈更快；</li>
+<li>整体回答更自然；</li>
+<li>用户更容易感知到“系统已经开始响应我了”。</li>
+</ul>
+<h3 id="阶段五：播放状态反向驱动-UI"><a href="#阶段五：播放状态反向驱动-UI" class="headerlink" title="阶段五：播放状态反向驱动 UI"></a>阶段五：播放状态反向驱动 UI</h3><p>在问答页里，TTS 不只是声音能力，它还会反向驱动 UI：</p>
+<ul>
+<li>当前回答卡片进入“朗读中”；</li>
+<li>播放结束后按钮恢复默认态；</li>
+<li>播放失败时给出兜底提示；</li>
+<li>某些情况下还会影响页面休眠策略。</li>
+</ul>
+<p>所以最终呈现给用户的不是“音频自己播”，而是一个 <strong>声音与界面状态同步变化的交互结果</strong>。</p>
+<h3 id="结合代码理解：这条链路在工程里通常会怎么写"><a href="#结合代码理解：这条链路在工程里通常会怎么写" class="headerlink" title="结合代码理解：这条链路在工程里通常会怎么写"></a>结合代码理解：这条链路在工程里通常会怎么写</h3><h4 id="1）业务层先决定这包-spokenText-是否应该触发-TTS"><a href="#1）业务层先决定这包-spokenText-是否应该触发-TTS" class="headerlink" title="1）业务层先决定这包 spokenText 是否应该触发 TTS"></a>1）业务层先决定这包 <code>spokenText</code> 是否应该触发 TTS</h4><figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">handleStreamingMessage</span>(<span class="keyword">_</span> <span class="params">message</span>: <span class="type">ChatMessage</span>, <span class="params">index</span>: <span class="type">Int</span>) &#123;</span><br><span class="line">    <span class="keyword">let</span> spokenText <span class="operator">=</span> message.spokenText</span><br><span class="line">    <span class="keyword">let</span> isFinal <span class="operator">=</span> message.isFinal</span><br><span class="line"></span><br><span class="line">    <span class="keyword">guard</span> <span class="operator">!</span>spokenText.isEmpty <span class="keyword">else</span> &#123; <span class="keyword">return</span> &#125;</span><br><span class="line"></span><br><span class="line">    firstPacketIndex <span class="operator">+=</span> <span class="number">1</span></span><br><span class="line">    <span class="keyword">if</span> firstPacketIndex <span class="operator">==</span> <span class="number">0</span> &#123;</span><br><span class="line">        cachedSpokenText <span class="operator">=</span> <span class="string">&quot;&quot;</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> audioSwitchOn <span class="operator">&amp;&amp;</span> canStartTTS <span class="operator">&amp;&amp;</span> <span class="operator">!</span>isInOtherVoiceScene &#123;</span><br><span class="line">        startTTS(</span><br><span class="line">            text: spokenText,</span><br><span class="line">            isFirst: firstPacketIndex <span class="operator">==</span> <span class="number">0</span>,</span><br><span class="line">            isFinal: isFinal,</span><br><span class="line">            currentIndex: index</span><br><span class="line">        )</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        cachedSpokenText <span class="operator">=</span> spokenText</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段逻辑对应的核心思想是：</p>
+<ul>
+<li>先拿到流式返回的 <code>spokenText</code>；</li>
+<li>再判断当前是否允许播报；</li>
+<li>能播就立刻进入 TTS；</li>
+<li>不能播就先缓存，等合适时机再补播。</li>
+</ul>
+<p>也就是说，在真实工程里，<strong>TTS 的入口一定是业务判断之后的结果</strong>，而不是模型一来文本就无条件往下播。</p>
+<h4 id="2）编排层负责把“不断变长的整段文本”变成“可播的新增句子”"><a href="#2）编排层负责把“不断变长的整段文本”变成“可播的新增句子”" class="headerlink" title="2）编排层负责把“不断变长的整段文本”变成“可播的新增句子”"></a>2）编排层负责把“不断变长的整段文本”变成“可播的新增句子”</h4><figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">addSentence</span>(<span class="params">text</span>: <span class="type">String</span>, <span class="params">isFirstPackage</span>: <span class="type">Bool</span>, <span class="params">isFinal</span>: <span class="type">Bool</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> isFirstPackage &#123;</span><br><span class="line">        resetPlaybackContext()</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> text.count <span class="operator">&gt;</span> lastSpokenText.count &#123;</span><br><span class="line">        <span class="keyword">let</span> delta <span class="operator">=</span> text.suffix(text.count <span class="operator">-</span> lastSpokenText.count)</span><br><span class="line">        lastSpokenText <span class="operator">=</span> text</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> isValid(delta) <span class="operator">||</span> isFinal &#123;</span><br><span class="line">            splitAndEnqueue(delta, isFinal: isFinal)</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            rollbackLastSpokenText(by: delta.count)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> <span class="operator">!</span>isReceiving <span class="operator">&amp;&amp;</span> stream <span class="operator">==</span> <span class="literal">nil</span> &#123;</span><br><span class="line">        startStreamSynthesis()</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这一层解决的是流式 TTS 里最关键的问题：</p>
+<ul>
+<li>大模型返回的是整段增长文本；</li>
+<li>TTS 真正需要的是“这次新增了什么”；</li>
+<li>新增内容还得进一步判断是否值得播、是否已经成句。</li>
+</ul>
+<p>如果没有这层编排，最常见的问题就是重复播、半句播、尾句漏播。</p>
+<h4 id="3）合成与播放层负责把文本流真正变成“边回边播”的音频流"><a href="#3）合成与播放层负责把文本流真正变成“边回边播”的音频流" class="headerlink" title="3）合成与播放层负责把文本流真正变成“边回边播”的音频流"></a>3）合成与播放层负责把文本流真正变成“边回边播”的音频流</h4><figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">startStreamSynthesis</span>() &#123;</span><br><span class="line">    <span class="keyword">let</span> request <span class="operator">=</span> <span class="type">SynthRequest</span>(</span><br><span class="line">        speaker: defaultSpeaker,</span><br><span class="line">        scene: .im,</span><br><span class="line">        metadata: buildRuntimeMetadata()</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    stream <span class="operator">=</span> speechEngine.createStream()</span><br><span class="line">    stream<span class="operator">?</span>.config(request)</span><br><span class="line">    stream<span class="operator">?</span>.send(nextSentence())</span><br><span class="line"></span><br><span class="line">    receiveLoop &#123; audioChunk <span class="keyword">in</span></span><br><span class="line">        player.play(audioChunk)</span><br><span class="line">    &#125; onFinish: &#123;</span><br><span class="line">        updatePlayerStatus(.finished)</span><br><span class="line">    &#125; onError: &#123; error <span class="keyword">in</span></span><br><span class="line">        updatePlayerStatus(.failed)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里的重点不在于具体 SDK 接口，而在于链路形态：</p>
+<ul>
+<li>先创建流式合成会话；</li>
+<li>再把句子送给合成引擎；</li>
+<li>音频不是一次性下载，而是 chunk 级回流；</li>
+<li>播放器收到 chunk 后立即开始输出；</li>
+<li>状态回调继续反向驱动业务层。</li>
+</ul>
+<p>从架构视角看，这里真正建立起来的是一条：</p>
+<blockquote>
+<p><strong>文本流 → 合成流 → 音频流 → 页面状态流</strong></p>
+</blockquote>
+<p>而不是单纯一次函数调用。</p>
+<h3 id="一个来自项目实践的-AIGC-IM-全流程案例"><a href="#一个来自项目实践的-AIGC-IM-全流程案例" class="headerlink" title="一个来自项目实践的 AIGC &#x2F; IM 全流程案例"></a>一个来自项目实践的 AIGC &#x2F; IM 全流程案例</h3><p>如果把这套设计放回真实项目，一个典型的 AIGC &#x2F; IM TTS 全流程大致会是这样：</p>
+<h4 id="第一步：用户发起问题"><a href="#第一步：用户发起问题" class="headerlink" title="第一步：用户发起问题"></a>第一步：用户发起问题</h4><p>用户在 IM 问答页输入：</p>
+<blockquote>
+<p>“帮我介绍下目前 AI Agent 的发展。”</p>
+</blockquote>
+<p>此时页面进入“等待回答”状态，模型开始以流式方式返回 <code>displayText</code> 和 <code>spokenText</code>。</p>
+<h4 id="第二步：业务层先处理流式消息，而不是直接播放"><a href="#第二步：业务层先处理流式消息，而不是直接播放" class="headerlink" title="第二步：业务层先处理流式消息，而不是直接播放"></a>第二步：业务层先处理流式消息，而不是直接播放</h4><p>每收到一包消息，页面层会同步更新：</p>
+<ul>
+<li>用于展示的文本；</li>
+<li>用于播报的文本；</li>
+<li>本轮是否结束；</li>
+<li>当前是否允许启动 TTS。</li>
+</ul>
+<p>这一步的职责是“接消息”，不是“播消息”。</p>
+<h4 id="第三步：如果满足条件，就把-spokenText-交给-TTS-编排层"><a href="#第三步：如果满足条件，就把-spokenText-交给-TTS-编排层" class="headerlink" title="第三步：如果满足条件，就把 spokenText 交给 TTS 编排层"></a>第三步：如果满足条件，就把 <code>spokenText</code> 交给 TTS 编排层</h4><p>当满足以下条件时，TTS 才真正启动：</p>
+<ul>
+<li>用户开启了语音播报；</li>
+<li>当前不是游客或受限态；</li>
+<li>当前没有被其它语音场景占用；</li>
+<li>当前不需要等待更高优先级的展示流程。</li>
+</ul>
+<p>如果此时不适合立刻播，项目里会先缓存 <code>spokenText</code>，而不是丢弃。</p>
+<h4 id="第四步：编排层提取增量、切句、入队"><a href="#第四步：编排层提取增量、切句、入队" class="headerlink" title="第四步：编排层提取增量、切句、入队"></a>第四步：编排层提取增量、切句、入队</h4><p>真实项目里，TTS 底座会把本轮整段文本和上一轮文本比较，只拿出新增部分，再做：</p>
+<ul>
+<li>无效文本过滤；</li>
+<li>标点切句；</li>
+<li>尾句补偿；</li>
+<li>待播队列入队。</li>
+</ul>
+<p>这一层做完之后，系统手里拿到的已经不是“模型吐出来的一段字符串”，而是一组 <strong>可调度的播报单元</strong>。</p>
+<h4 id="第五步：句子级合成会话启动"><a href="#第五步：句子级合成会话启动" class="headerlink" title="第五步：句子级合成会话启动"></a>第五步：句子级合成会话启动</h4><p>每当待播队列中有可播句子，系统就会：</p>
+<ol>
+<li>创建流式合成会话；</li>
+<li>注入运行时上下文（设备、环境、用户态等）；</li>
+<li>发送当前句子；</li>
+<li>开始接收音频回流。</li>
+</ol>
+<p>这一步意味着 TTS 已经从业务层正式进入媒体层。</p>
+<h4 id="第六步：音频-chunk-回流，本地边收边播"><a href="#第六步：音频-chunk-回流，本地边收边播" class="headerlink" title="第六步：音频 chunk 回流，本地边收边播"></a>第六步：音频 chunk 回流，本地边收边播</h4><p>真实播放不是“等整句音频完整返回再播”，而是：</p>
+<ul>
+<li>先收到第一批音频 chunk；</li>
+<li>立即推入缓冲区；</li>
+<li>播放器开始输出；</li>
+<li>后续 chunk 持续补进来。</li>
+</ul>
+<p>用户感知到的是“回答一边生成，一边开始读”，这也是整个体验自然度最关键的一环。</p>
+<h4 id="第七步：播放状态反向驱动-AIGC-页-UI"><a href="#第七步：播放状态反向驱动-AIGC-页-UI" class="headerlink" title="第七步：播放状态反向驱动 AIGC 页 UI"></a>第七步：播放状态反向驱动 AIGC 页 UI</h4><p>在项目实践里，TTS 状态通常会继续影响：</p>
+<ul>
+<li>当前回答气泡是否显示“朗读中”；</li>
+<li>播放结束后按钮是否恢复；</li>
+<li>播放失败时是否提示用户重试；</li>
+<li>页面是否需要临时禁止自动熄屏。</li>
+</ul>
+<p>也就是说，TTS 不是只负责出声，它还负责把“声音已经发生”这件事同步回交互层。</p>
+<h4 id="第八步：若中途被打断，整条链路要一起收口"><a href="#第八步：若中途被打断，整条链路要一起收口" class="headerlink" title="第八步：若中途被打断，整条链路要一起收口"></a>第八步：若中途被打断，整条链路要一起收口</h4><p>如果用户在此时：</p>
+<ul>
+<li>主动停止播放；</li>
+<li>切到其它语音业务；</li>
+<li>眼镜等外设开始接管语音通道；</li>
+</ul>
+<p>那真实项目里不会只做“播放器 stop”，而是要同时做：</p>
+<ul>
+<li>停掉当前合成流；</li>
+<li>清空本地缓存；</li>
+<li>重置句子队列与索引；</li>
+<li>把页面状态回到安全态；</li>
+<li>必要时通知设备侧清 buffer。</li>
+</ul>
+<p>这也是为什么在工程实践里，TTS 一定要被当成“链路能力”而不是“播放器能力”。</p>
+<h3 id="用一句话概括这个实践全流程"><a href="#用一句话概括这个实践全流程" class="headerlink" title="用一句话概括这个实践全流程"></a>用一句话概括这个实践全流程</h3><p>如果把这套项目实践压缩成一句话，它其实就是：</p>
+<blockquote>
+<p><strong>AIGC 页面收到流式 <code>spokenText</code> → 业务层做场景仲裁 → 编排层提取增量并切句 → 媒体层启动流式合成 → 音频 chunk 边回边播 → 状态继续反向驱动 UI → 被打断时整条链路统一收口。</strong></p>
+</blockquote>
+<p>这条链路之所以重要，不是因为它让系统“能播声音”，而是因为它让 AIGC &#x2F; IM 场景中的语音反馈真正具备了实时性、连续性和可控性。</p>
+<hr>
+<h2 id="六、为什么有些回答不能“马上播”"><a href="#六、为什么有些回答不能“马上播”" class="headerlink" title="六、为什么有些回答不能“马上播”"></a>六、为什么有些回答不能“马上播”</h2><p>在 AIGC 场景里，回答并不总是简单的纯文本输出。有些回答还会伴随：</p>
+<ul>
+<li>推理过程；</li>
+<li>工作流内容；</li>
+<li>分阶段展示；</li>
+<li>多模态内容生成。</li>
+</ul>
+<p>这意味着，文本虽然到了，但播报不一定应该立即开始。</p>
+<p>在我们的设计里，TTS 的启动会受到展示节奏影响：</p>
+<ul>
+<li>如果当前内容仍在更适合“先看后听”的阶段，播报会被延后；</li>
+<li>如果某段流程需要先把内容组织完整，再进入语音反馈，那么文本会先被缓存；</li>
+<li>等展示层完成关键阶段后，再统一触发播报。</li>
+</ul>
+<p>这背后的核心原则是：</p>
+<blockquote>
+<p><strong>语音反馈要服务于整体体验，而不是机械地追求“文本一到就播”。</strong></p>
+</blockquote>
+<p>这也是为什么今天的 TTS 更像一个业务编排组件，而不是传统意义上的“播放器插件”。</p>
+<hr>
+<h2 id="七、TTS-为什么一定要参与状态机设计"><a href="#七、TTS-为什么一定要参与状态机设计" class="headerlink" title="七、TTS 为什么一定要参与状态机设计"></a>七、TTS 为什么一定要参与状态机设计</h2><p>如果产品只是内容朗读，TTS 通常不需要复杂状态机。</p>
+<p>但在语音问答中，TTS 往往是整个交互状态链路中的一个核心节点。</p>
+<p>典型状态可能包括：</p>
+<ul>
+<li>空闲；</li>
+<li>识别中；</li>
+<li>思考中；</li>
+<li>播报中；</li>
+<li>暂停；</li>
+<li>失败；</li>
+<li>被打断。</li>
+</ul>
+<p>TTS 一旦开始播放，系统通常需要同步做两件事：</p>
+<ol>
+<li>暂停收音，避免回声和误识别；</li>
+<li>将交互态切到“播报中”，让 UI 和用户预期保持一致。</li>
+</ol>
+<p>而当播放结束，系统又要继续做两件事：</p>
+<ol>
+<li>回到空闲或聆听态；</li>
+<li>重新准备下一轮收音。</li>
+</ol>
+<p>因此，TTS 在实时语音产品里更像是：</p>
+<blockquote>
+<p><strong>一段会改变系统状态的媒体行为，而不是一个独立的输出动作。</strong></p>
+</blockquote>
+<hr>
+<h2 id="八、除了-AIGC，播客场景又为什么更复杂"><a href="#八、除了-AIGC，播客场景又为什么更复杂" class="headerlink" title="八、除了 AIGC，播客场景又为什么更复杂"></a>八、除了 AIGC，播客场景又为什么更复杂</h2><p>如果说 AIGC 问答解决的是“实时反馈”，那播客类场景解决的则是“连续听感”。</p>
+<p>在这类场景里，TTS 会遇到另外几类问题：</p>
+<ul>
+<li>多角色发言如何切换音色；</li>
+<li>当前段落播完后，下一段如何无缝接上；</li>
+<li>当前条目接近播完时，是否应该提前准备下一条；</li>
+<li>当中途失败时，是整条失败还是句子级重试。</li>
+</ul>
+<p>这类问题的本质不是“能不能播”，而是：</p>
+<blockquote>
+<p><strong>能不能播得连续、自然、像一个完整节目，而不是一堆断开的语音片段。</strong></p>
+</blockquote>
+<p>因此，在播客场景中，TTS 编排层往往会引入更多策略：</p>
+<ul>
+<li>句子级推进；</li>
+<li>角色级状态；</li>
+<li>预缓存下一段；</li>
+<li>局部失败重试；</li>
+<li>当前条和下一条之间的衔接时机控制。</li>
+</ul>
+<p>这也是为什么，同样是 TTS，播客场景和 AIGC 问答场景在实现重点上会完全不同。</p>
+<hr>
+<h2 id="九、为什么“打断”是-TTS-架构里必须单独设计的能力"><a href="#九、为什么“打断”是-TTS-架构里必须单独设计的能力" class="headerlink" title="九、为什么“打断”是 TTS 架构里必须单独设计的能力"></a>九、为什么“打断”是 TTS 架构里必须单独设计的能力</h2><p>在语音助手场景里，打断不是异常，而是高频行为。</p>
+<p>用户经常会在系统播报过程中：</p>
+<ul>
+<li>直接开口打断；</li>
+<li>切换到另一个语音业务；</li>
+<li>连接外设；</li>
+<li>主动点击停止。</li>
+</ul>
+<p>如果打断只是停掉当前播放器，往往还不够。</p>
+<p>真正的问题在于，链路中可能还有很多“未消费完的内容”：</p>
+<ul>
+<li>本地缓冲里的音频；</li>
+<li>服务侧还在回流的数据；</li>
+<li>外设侧尚未播完的 buffer；</li>
+<li>UI 层仍处于播放态的状态残留。</li>
+</ul>
+<p>因此，一个有效的打断机制通常要同时完成：</p>
+<ol>
+<li>停止当前合成流；</li>
+<li>停止本地播放；</li>
+<li>清空本地音频缓存；</li>
+<li>必要时通知设备侧清空 buffer；</li>
+<li>重置句子队列和播放索引；</li>
+<li>把业务状态回到可恢复的安全态。</li>
+</ol>
+<p>只有这样，用户才会真正感觉到“我刚才已经打断成功了”。</p>
+<hr>
+<h2 id="十、当-TTS-进入外设和-RTC-场景，问题又变了"><a href="#十、当-TTS-进入外设和-RTC-场景，问题又变了" class="headerlink" title="十、当 TTS 进入外设和 RTC 场景，问题又变了"></a>十、当 TTS 进入外设和 RTC 场景，问题又变了</h2><p>在手机本地扬声器播报时，TTS 主要解决的是“生成并播放”。</p>
+<p>但在眼镜、车载、耳机等外设场景里，TTS 的定位会进一步变化。</p>
+<p>此时更常见的链路是：</p>
+<blockquote>
+<p>外设采音 → App 作为桥接层上传 → 云端理解与生成 → 云端返回 TTS 音频 → App 转发给外设播放</p>
+</blockquote>
+<p>在这条链路中，App 不再只是最终播放端，更像是 <strong>实时音频与事件的编排中心</strong>。</p>
+<p>这时两个问题会变得特别重要。</p>
+<h3 id="1-上行音频不能丢"><a href="#1-上行音频不能丢" class="headerlink" title="1. 上行音频不能丢"></a>1. 上行音频不能丢</h3><p>设备唤醒后，用户第一句话往往最关键。但 RTC 会话未必已经建好。</p>
+<p>如果此时没有预缓存，上行首包语音就可能直接丢失，表现为：</p>
+<ul>
+<li>首词缺失；</li>
+<li>识别不完整；</li>
+<li>用户觉得“设备没听见”。</li>
+</ul>
+<h3 id="2-下行音频必须支持-clearBuffer"><a href="#2-下行音频必须支持-clearBuffer" class="headerlink" title="2. 下行音频必须支持 clearBuffer"></a>2. 下行音频必须支持 clearBuffer</h3><p>如果上一轮播报还在设备缓冲区里，而新一轮会话已经开始，仅仅停本地播放是不够的。</p>
+<p>因此，下行音频事件最好天然带有“清 buffer”的语义，业务层收到后可以立刻通知外设清理积压内容。</p>
+<p>这也是为什么，在外设场景里，TTS 不再只是一个内容生成问题，而是：</p>
+<blockquote>
+<p><strong>一条需要和 RTC、设备控制、打断机制一起设计的实时媒体链路。</strong></p>
+</blockquote>
+<hr>
+<h2 id="十一、为什么音频会话管理是这套架构成立的前提"><a href="#十一、为什么音频会话管理是这套架构成立的前提" class="headerlink" title="十一、为什么音频会话管理是这套架构成立的前提"></a>十一、为什么音频会话管理是这套架构成立的前提</h2><p>很多人讨论 TTS 时，会把注意力集中在“语音合成”上，但在移动端，真正影响稳定性的往往是音频会话。</p>
+<p>因为一个真实产品需要同时面对：</p>
+<ul>
+<li>录音；</li>
+<li>播报；</li>
+<li>音乐播放；</li>
+<li>蓝牙耳机；</li>
+<li>电话打断；</li>
+<li>前后台切换。</li>
+</ul>
+<p>如果音频会话切换策略不清晰，就很容易出现这些问题：</p>
+<ul>
+<li>有文本但没声音；</li>
+<li>播报走错了输出设备；</li>
+<li>收音和播放互相抢占；</li>
+<li>电话结束后链路恢复不了。</li>
+</ul>
+<p>所以在我们的实践里，音频会话不是 TTS 的附属配置，而是核心基础设施。</p>
+<p>只有把“录音态”和“播放态”切换设计清楚，TTS 才能真正进入复杂业务场景。</p>
+<hr>
+<h2 id="十二、可观测性为什么必须从第一天就设计进去"><a href="#十二、可观测性为什么必须从第一天就设计进去" class="headerlink" title="十二、可观测性为什么必须从第一天就设计进去"></a>十二、可观测性为什么必须从第一天就设计进去</h2><p>TTS 这类实时能力上线后，最难排查的问题往往不是功能错误，而是体验问题：</p>
+<ul>
+<li>为什么这次播报感觉慢了半秒？</li>
+<li>为什么明明合成成功了，用户还是没听见？</li>
+<li>为什么打断有时有效，有时有残音？</li>
+<li>为什么某些网络环境下播报卡顿？</li>
+</ul>
+<p>如果没有可观测性，这些问题几乎无法复盘。</p>
+<p>因此我们比较看重以下几类指标：</p>
+<h3 id="1-生命周期指标"><a href="#1-生命周期指标" class="headerlink" title="1. 生命周期指标"></a>1. 生命周期指标</h3><ul>
+<li>合成会话启动成功率；</li>
+<li>播放成功率；</li>
+<li>中断原因分布；</li>
+<li>会话结束原因分布。</li>
+</ul>
+<h3 id="2-时延指标"><a href="#2-时延指标" class="headerlink" title="2. 时延指标"></a>2. 时延指标</h3><ul>
+<li>从文本到首包音频的耗时；</li>
+<li>从回答结束到播报结束的耗时；</li>
+<li>音频回包间隔；</li>
+<li>外设链路的转发时延。</li>
+</ul>
+<h3 id="3-环境指标"><a href="#3-环境指标" class="headerlink" title="3. 环境指标"></a>3. 环境指标</h3><ul>
+<li>当前网络类型；</li>
+<li>当前音频路由；</li>
+<li>当前前后台状态；</li>
+<li>当前场景类型。</li>
+</ul>
+<p>只有把这些指标建起来，TTS 才能从“可用”走向“稳定”。</p>
+<hr>
+<h2 id="十三、这套-TTS-架构带来的核心价值是什么"><a href="#十三、这套-TTS-架构带来的核心价值是什么" class="headerlink" title="十三、这套 TTS 架构带来的核心价值是什么"></a>十三、这套 TTS 架构带来的核心价值是什么</h2><p>回到最初的问题：我们为什么要把一个看似简单的语音播报能力，做成一套完整的业务架构？</p>
+<p>答案其实很直接。</p>
+<p>因为在今天的 AI 产品里，TTS 早就不只是把文本读出来，它承担的是：</p>
+<h3 id="1-更快的反馈感"><a href="#1-更快的反馈感" class="headerlink" title="1. 更快的反馈感"></a>1. 更快的反馈感</h3><p>通过流式播报，用户更早听到系统回应，等待感大幅降低。</p>
+<h3 id="2-更自然的交互感"><a href="#2-更自然的交互感" class="headerlink" title="2. 更自然的交互感"></a>2. 更自然的交互感</h3><p>系统不是“先沉默很久，再一次性说完”，而是像对话一样，逐步回应。</p>
+<h3 id="3-更稳定的多场景适配能力"><a href="#3-更稳定的多场景适配能力" class="headerlink" title="3. 更稳定的多场景适配能力"></a>3. 更稳定的多场景适配能力</h3><p>同一套 TTS 编排能力，可以支撑：</p>
+<ul>
+<li>AIGC 问答；</li>
+<li>语音助手；</li>
+<li>播客连续播报；</li>
+<li>外设语音反馈；</li>
+<li>实时会话链路扩展。</li>
+</ul>
+<h3 id="4-更可控的打断与恢复体验"><a href="#4-更可控的打断与恢复体验" class="headerlink" title="4. 更可控的打断与恢复体验"></a>4. 更可控的打断与恢复体验</h3><p>当用户行为越来越实时，打断、切换、重入就成为常态。只有把这些视为架构问题，TTS 才不会在复杂场景里失控。</p>
+<hr>
+<h2 id="十四、最后总结：TTS-已经是“实时交互系统”的一部分"><a href="#十四、最后总结：TTS-已经是“实时交互系统”的一部分" class="headerlink" title="十四、最后总结：TTS 已经是“实时交互系统”的一部分"></a>十四、最后总结：TTS 已经是“实时交互系统”的一部分</h2><p>如果用一句话总结这次实践，我会说：</p>
+<blockquote>
+<p><strong>今天的 TTS，已经不该被理解成一个独立的语音朗读模块，而应该被看作实时 AI 交互系统中的反馈中枢。</strong></p>
+</blockquote>
+<p>它连接的是：</p>
+<ul>
+<li>模型输出；</li>
+<li>用户听觉反馈；</li>
+<li>页面状态；</li>
+<li>音频会话；</li>
+<li>外设与 RTC；</li>
+<li>打断与恢复机制。</li>
+</ul>
+<p>也正因为如此，一套真正可落地的 TTS 架构，关注点从来不只是“合成效果好不好”，而是：</p>
+<ul>
+<li>能不能更快开始；</li>
+<li>能不能自然地边说边播；</li>
+<li>能不能在复杂场景中稳定运行；</li>
+<li>能不能在被打断后快速恢复；</li>
+<li>能不能成为整个实时交互链路里可靠的一环。</li>
+</ul>
+<p>当我们从这个角度重新理解 TTS，它就不再只是“给文本配声音”，而是在产品体验层面，真正承担起了 <strong>让 AI 回答变得可感知、可打断、可持续</strong> 的责任。</p>
+]]></content>
+      <categories>
+        <category>iOS架构设计</category>
+      </categories>
+      <tags>
+        <tag>AI Agent</tag>
+        <tag>实时对话</tag>
+        <tag>TTS</tag>
+        <tag>音频架构</tag>
+        <tag>语音合成</tag>
+      </tags>
+  </entry>
 </search>
