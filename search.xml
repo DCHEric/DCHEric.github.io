@@ -2691,4 +2691,96 @@ flowchart TD
         <tag>语音合成</tag>
       </tags>
   </entry>
+  <entry>
+    <title>全链路 AI 对话系统架构解析：VAD · ASR · LLM · TTS · RTC</title>
+    <url>/2026/04/10/AI-Dialogue-Flow/</url>
+    <content><![CDATA[<p>一个端到端的 AI 语音对话系统，远不止是”说话 → AI 回答”这么简单。在用户开口到听到回复的 800ms 以内，系统需要依次完成语音检测、语音识别、大模型推理、语音合成和实时传输五个关键环节。</p>
+<p>本文以下图架构为脉络，逐层拆解每一层的核心设计思路和关键技术取舍。</p>
+<p><img data-src="/images/AI-Dialogue-Flow.PNG" alt="全链路 AI 对话系统五层架构"></p>
+<hr>
+<h2 id="全链路五层架构"><a href="#全链路五层架构" class="headerlink" title="全链路五层架构"></a>全链路五层架构</h2><h3 id="第一层：VAD-·-语音活动检测"><a href="#第一层：VAD-·-语音活动检测" class="headerlink" title="第一层：VAD · 语音活动检测"></a>第一层：VAD · 语音活动检测</h3><p>这是整个管道的<strong>门控</strong>。麦克风持续采集音频，VAD 以约 30ms 为帧长，实时判断当前帧是否包含人声——核心解决两个问题：</p>
+<ul>
+<li><strong>用户开始说话了</strong>：触发 ASR 开始工作</li>
+<li><strong>用户说完了</strong>：endpoint detection，触发后续推理</li>
+</ul>
+<p>常用方案有 WebRTC 内置 VAD 和 Silero VAD，误检率直接影响交互体验。</p>
+<hr>
+<h3 id="第二层：ASR-·-自动语音识别"><a href="#第二层：ASR-·-自动语音识别" class="headerlink" title="第二层：ASR · 自动语音识别"></a>第二层：ASR · 自动语音识别</h3><p>将语音帧转换为文字 token，现代 ASR 分三步走：</p>
+<ol>
+<li>用 <strong>Mel 频谱</strong>提取声学特征</li>
+<li>通过 <strong>Transformer &#x2F; Conformer</strong> 架构做序列建模</li>
+<li>用 <strong>CTC 或 Beam Search</strong> 解码出文本</li>
+</ol>
+<p>关键设计取舍在于<strong>流式 vs 离线</strong>——流式 ASR（如 FunASR 的实时模式）能在用户说话时就输出中间结果，大幅降低首包延迟，但准确率略低；Whisper 是非流式的高精度代表。</p>
+<hr>
+<h3 id="第三层：LLM-·-大语言模型推理"><a href="#第三层：LLM-·-大语言模型推理" class="headerlink" title="第三层：LLM · 大语言模型推理"></a>第三层：LLM · 大语言模型推理</h3><p>这是系统的”大脑”。文本进入 LLM 后，模型依据 System Prompt、对话历史（Memory）和可选的 RAG 知识库来生成回复。</p>
+<p>影响延迟的核心技术：</p>
+<ul>
+<li><strong>KV Cache</strong>：避免重复计算注意力，显著提升吞吐</li>
+<li><strong>流式输出（Streaming）</strong>：生成一个 token 就发给 TTS，而不是等全部生成完再发</li>
+</ul>
+<p>复杂场景下还会触发 <strong>Function Calling &#x2F; Agent</strong> 行动，通过 MCP 协议调用外部工具后再汇总回答。</p>
+<hr>
+<h3 id="第四层：TTS-·-语音合成"><a href="#第四层：TTS-·-语音合成" class="headerlink" title="第四层：TTS · 语音合成"></a>第四层：TTS · 语音合成</h3><p>把文本转回人声，流程是：</p>
+<blockquote>
+<p>文本前端（分词 + 韵律预测 + G2P 音素转换）→ 声学模型（VITS &#x2F; FastSpeech2 预测 Mel 频谱）→ 声码器（HiFi-GAN &#x2F; WaveNet 还原 PCM 波形）</p>
+</blockquote>
+<p>现代 TTS 支持<strong>零样本音色克隆</strong>（仅需 3 秒参考音频），以及与 LLM 联动的情感 &#x2F; 语速控制。</p>
+<p>流式 TTS 的关键在于：<strong>拿到 LLM 第一句话后就立刻开始合成，不等全文</strong>，这是控制端到端延迟的核心手段之一。</p>
+<hr>
+<h3 id="第五层：RTC-·-实时音频传输"><a href="#第五层：RTC-·-实时音频传输" class="headerlink" title="第五层：RTC · 实时音频传输"></a>第五层：RTC · 实时音频传输</h3><p>合成好的音频经 <strong>WebRTC + Opus</strong> 编码发回客户端播放。这一层还承担<strong>打断检测</strong>的职责——</p>
+<p>当用户在 AI 说话过程中插话，VAD 检测到后立刻中止当前 TTS 播放，清空队列，将新语音送入 ASR，实现真正的<strong>全双工对话</strong>。同时，RNNoise 在传输层做实时降噪，进一步保障语音质量。</p>
+<hr>
+<h2 id="端到端延迟拆解"><a href="#端到端延迟拆解" class="headerlink" title="端到端延迟拆解"></a>端到端延迟拆解</h2><table>
+<thead>
+<tr>
+<th>层级</th>
+<th>典型延迟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>VAD</td>
+<td>~30ms</td>
+</tr>
+<tr>
+<td>ASR</td>
+<td>~200ms</td>
+</tr>
+<tr>
+<td>LLM</td>
+<td>~300ms（首 token）</td>
+</tr>
+<tr>
+<td>TTS</td>
+<td>~200ms</td>
+</tr>
+<tr>
+<td>RTC</td>
+<td>~50ms</td>
+</tr>
+<tr>
+<td><strong>合计</strong></td>
+<td><strong>&lt; 800ms</strong></td>
+</tr>
+</tbody></table>
+<p>每一层的流式化改造都是压缩整体延迟的关键——ASR 流式输出、LLM 流式推理、TTS 流式合成，三层叠加才能把端到端延迟控制在体验可接受的范围内。</p>
+<hr>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
+<li><a href="https://www.shengwang.cn/blog/blogdetail/AI-benchmark/">从 ASR 到 TTS，全链路对话模型打通意味着什么？</a> —— 声网</li>
+<li><a href="https://www.zedyer.com/iot-knowledge/rtc-ai-voice-agent/">RTC+AI 构建全双工对话式 AI：实时通信驱动的 AI 智能体应用</a> —— Zedyer</li>
+<li><a href="https://voxcpm.modelbest.cn/">VoxCPM2：面壁智能 × 清华大学人机语音交互实验室开源 2B 端侧对话小模型</a></li>
+</ul>
+]]></content>
+      <categories>
+        <category>AI架构设计</category>
+      </categories>
+      <tags>
+        <tag>AI Agent</tag>
+        <tag>RTC</tag>
+        <tag>实时对话</tag>
+        <tag>TTS</tag>
+        <tag>ASR</tag>
+        <tag>LLM</tag>
+      </tags>
+  </entry>
 </search>

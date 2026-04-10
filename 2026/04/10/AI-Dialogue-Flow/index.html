@@ -20,31 +20,34 @@
 
 <script class="next-config" data-name="main" type="application/json">{"hostname":"dcheric.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.27.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12,"width":300},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":true,"style":"flat"},"fold":{"enable":false,"height":500},"language":true},"bookmark":{"enable":true,"color":"#222","save":"auto"},"mediumzoom":true,"lazyload":true,"pangu":false,"comments":{"style":"tabs","active":"utterances","storage":true,"lazyload":false,"nav":null,"nav_id":"comments","activeClass":"utterances"},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"path":"/search.xml","localsearch":{"enable":true,"top_n_per_article":1,"unescape":false,"preload":false,"trigger":"auto"}}</script><script src="/js/config.js" defer></script>
 
-    <meta name="description" content="深入理解 iOS 程序从启动到运行的完整流程，从内核加载、Runtime 初始化到 RunLoop 事件循环的技术原理。">
+    <meta name="description" content="本文拆解端到端 AI 对话系统的全链路五层架构，从 VAD 门控、ASR 语音识别、LLM 推理，到 TTS 合成与 RTC 实时传输，分析各层核心设计取舍与延迟优化要点，端到端延迟目标 &lt; 800ms。">
 <meta property="og:type" content="article">
-<meta property="og:title" content="从Runtime到Runloop">
-<meta property="og:url" content="https://dcheric.github.io/2026/03/30/from_runtime_tor_runloop/index.html">
+<meta property="og:title" content="全链路 AI 对话系统架构解析：VAD · ASR · LLM · TTS · RTC">
+<meta property="og:url" content="https://dcheric.github.io/2026/04/10/AI-Dialogue-Flow/index.html">
 <meta property="og:site_name" content="DCH&#39;s Blog">
-<meta property="og:description" content="深入理解 iOS 程序从启动到运行的完整流程，从内核加载、Runtime 初始化到 RunLoop 事件循环的技术原理。">
+<meta property="og:description" content="本文拆解端到端 AI 对话系统的全链路五层架构，从 VAD 门控、ASR 语音识别、LLM 推理，到 TTS 合成与 RTC 实时传输，分析各层核心设计取舍与延迟优化要点，端到端延迟目标 &lt; 800ms。">
 <meta property="og:locale" content="zh_CN">
-<meta property="og:image" content="https://dcheric.github.io/images/from_runtime_to_runloop.jpeg">
-<meta property="article:published_time" content="2026-03-30T04:00:00.000Z">
-<meta property="article:modified_time" content="2026-03-30T06:34:44.455Z">
+<meta property="og:image" content="https://dcheric.github.io/images/AI-Dialogue-Flow.PNG">
+<meta property="article:published_time" content="2026-04-10T06:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-10T09:18:42.199Z">
 <meta property="article:author" content="DCH">
-<meta property="article:tag" content="Runtime">
-<meta property="article:tag" content="Runloop">
-<meta property="article:tag" content="iOS开发">
+<meta property="article:tag" content="AI Agent">
+<meta property="article:tag" content="RTC">
+<meta property="article:tag" content="实时对话">
+<meta property="article:tag" content="TTS">
+<meta property="article:tag" content="ASR">
+<meta property="article:tag" content="LLM">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:image" content="https://dcheric.github.io/images/from_runtime_to_runloop.jpeg">
+<meta name="twitter:image" content="https://dcheric.github.io/images/AI-Dialogue-Flow.PNG">
 
 
-<link rel="canonical" href="https://dcheric.github.io/2026/03/30/from_runtime_tor_runloop/">
+<link rel="canonical" href="https://dcheric.github.io/2026/04/10/AI-Dialogue-Flow/">
 
 
-<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://dcheric.github.io/2026/03/30/from_runtime_tor_runloop/","path":"2026/03/30/from_runtime_tor_runloop/","title":"从Runtime到Runloop"}</script>
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://dcheric.github.io/2026/04/10/AI-Dialogue-Flow/","path":"2026/04/10/AI-Dialogue-Flow/","title":"全链路 AI 对话系统架构解析：VAD · ASR · LLM · TTS · RTC"}</script>
 
 <script class="next-config" data-name="calendar" type="application/json">""</script>
-<title>从Runtime到Runloop | DCH's Blog</title>
+<title>全链路 AI 对话系统架构解析：VAD · ASR · LLM · TTS · RTC | DCH's Blog</title>
   
 
   <script src="/js/third-party/analytics/baidu-analytics.js" defer></script>
@@ -79,7 +82,7 @@
 
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/quicklink/3.0.1/quicklink.umd.js" integrity="sha256-44BednzIpUeQJcY8qtLyarFu0UCCTbgmWOvaoehiFQQ=" crossorigin="anonymous" defer></script>
-  <script class="next-config" data-name="quicklink" type="application/json">{"enable":true,"home":true,"archive":true,"delay":true,"timeout":3000,"priority":true,"url":"https://dcheric.github.io/2026/03/30/from_runtime_tor_runloop/"}</script>
+  <script class="next-config" data-name="quicklink" type="application/json">{"enable":true,"home":true,"archive":true,"delay":true,"timeout":3000,"priority":true,"url":"https://dcheric.github.io/2026/04/10/AI-Dialogue-Flow/"}</script>
   <script src="/js/third-party/quicklink.js" defer></script>
 
   <noscript>
@@ -172,7 +175,7 @@
       <div class="sidebar-panel-container">
         <!--noindex-->
         <div class="post-toc-wrap sidebar-panel">
-            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%BB%8ERuntime%E5%88%B0Runloop"><span class="nav-number">1.</span> <span class="nav-text">从Runtime到Runloop</span></a></li></ol></div>
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%A8%E9%93%BE%E8%B7%AF%E4%BA%94%E5%B1%82%E6%9E%B6%E6%9E%84"><span class="nav-number">1.</span> <span class="nav-text">全链路五层架构</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E5%B1%82%EF%BC%9AVAD-%C2%B7-%E8%AF%AD%E9%9F%B3%E6%B4%BB%E5%8A%A8%E6%A3%80%E6%B5%8B"><span class="nav-number">1.1.</span> <span class="nav-text">第一层：VAD · 语音活动检测</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E5%B1%82%EF%BC%9AASR-%C2%B7-%E8%87%AA%E5%8A%A8%E8%AF%AD%E9%9F%B3%E8%AF%86%E5%88%AB"><span class="nav-number">1.2.</span> <span class="nav-text">第二层：ASR · 自动语音识别</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E5%B1%82%EF%BC%9ALLM-%C2%B7-%E5%A4%A7%E8%AF%AD%E8%A8%80%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86"><span class="nav-number">1.3.</span> <span class="nav-text">第三层：LLM · 大语言模型推理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E5%9B%9B%E5%B1%82%EF%BC%9ATTS-%C2%B7-%E8%AF%AD%E9%9F%B3%E5%90%88%E6%88%90"><span class="nav-number">1.4.</span> <span class="nav-text">第四层：TTS · 语音合成</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%94%E5%B1%82%EF%BC%9ARTC-%C2%B7-%E5%AE%9E%E6%97%B6%E9%9F%B3%E9%A2%91%E4%BC%A0%E8%BE%93"><span class="nav-number">1.5.</span> <span class="nav-text">第五层：RTC · 实时音频传输</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AB%AF%E5%88%B0%E7%AB%AF%E5%BB%B6%E8%BF%9F%E6%8B%86%E8%A7%A3"><span class="nav-number">2.</span> <span class="nav-text">端到端延迟拆解</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">3.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
         </div>
         <!--/noindex-->
 
@@ -264,7 +267,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="https://dcheric.github.io/2026/03/30/from_runtime_tor_runloop/">
+    <link itemprop="mainEntityOfPage" href="https://dcheric.github.io/2026/04/10/AI-Dialogue-Flow/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/avatar.jpg">
@@ -277,12 +280,12 @@
     </span>
 
     <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
-      <meta itemprop="name" content="从Runtime到Runloop | DCH's Blog">
-      <meta itemprop="description" content="深入理解 iOS 程序从启动到运行的完整流程，从内核加载、Runtime 初始化到 RunLoop 事件循环的技术原理。">
+      <meta itemprop="name" content="全链路 AI 对话系统架构解析：VAD · ASR · LLM · TTS · RTC | DCH's Blog">
+      <meta itemprop="description" content="本文拆解端到端 AI 对话系统的全链路五层架构，从 VAD 门控、ASR 语音识别、LLM 推理，到 TTS 合成与 RTC 实时传输，分析各层核心设计取舍与延迟优化要点，端到端延迟目标 &lt; 800ms。">
     </span>
       <header class="post-header">
         <h1 class="post-title" itemprop="name headline">
-          从Runtime到Runloop
+          全链路 AI 对话系统架构解析：VAD · ASR · LLM · TTS · RTC
         </h1>
 
         <div class="post-meta-container">
@@ -294,7 +297,7 @@
       <span class="post-meta-item-text">发表于</span>
       
 
-      <time title="创建时间：2026-03-30 12:00:00 / 修改时间：14:34:44" itemprop="dateCreated datePublished" datetime="2026-03-30T12:00:00+08:00">2026-03-30</time>
+      <time title="创建时间：2026-04-10 14:00:00 / 修改时间：17:18:42" itemprop="dateCreated datePublished" datetime="2026-04-10T14:00:00+08:00">2026-04-10</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -302,77 +305,96 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/iOS/" itemprop="url" rel="index"><span itemprop="name">iOS</span></a>
+          <a href="/categories/AI%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" itemprop="url" rel="index"><span itemprop="name">AI架构设计</span></a>
         </span>
     </span>
 
   
 </div>
 
-            <div class="post-description">深入理解 iOS 程序从启动到运行的完整流程，从内核加载、Runtime 初始化到 RunLoop 事件循环的技术原理。</div>
+            <div class="post-description">本文拆解端到端 AI 对话系统的全链路五层架构，从 VAD 门控、ASR 语音识别、LLM 推理，到 TTS 合成与 RTC 实时传输，分析各层核心设计取舍与延迟优化要点，端到端延迟目标 < 800ms。</div>
         </div>
       </header>
 
     
     
     
-    <div class="post-body" itemprop="articleBody"><h1 id="从Runtime到Runloop"><a href="#从Runtime到Runloop" class="headerlink" title="从Runtime到Runloop"></a>从Runtime到Runloop</h1><p>iOS 程序的执行顺序分两个层面：启动过程和运行时的生命周期。</p>
-<span id="more"></span>
-
-<p><img data-src="/images/from_runtime_to_runloop.jpeg" alt="iOS程序执行流程"></p>
-<p>① 内核 &amp; dyld 阶段<br>用户点击 App 图标后，系统做的第一件事不是执行你写的代码，而是：<br>内核把 Mach-O 格式的可执行文件映射进内存，然后交给 dyld（动态链接器）。dyld 负责把 UIKit、Foundation、你引入的第三方库等所有动态库加载进来，解析符号，把函数地址都对号入座。<br>之后 Objective-C Runtime 初始化，执行所有类的 +load 方法。这是整个 App 里最早被执行的自定义代码，很多黑魔法（Method Swizzling）就藏在这里。</p>
-<p>② main() 函数<br>这是能看到的起点，但其实也就两行核心代码：</p>
-<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Swift 项目里用 @main 替代，本质一样</span></span><br><span class="line"><span class="type">UIApplicationMain</span>(argc, argv, <span class="literal">nil</span>, <span class="type">NSStringFromClass</span>(<span class="type">AppDelegate</span>.<span class="keyword">self</span>))</span><br></pre></td></tr></table></figure>
-
-<p>UIApplicationMain 做了三件事：创建 UIApplication 单例、创建 AppDelegate 实例、启动主线程的 RunLoop（这个函数永远不会返回）。</p>
-<p>③ AppDelegate 回调</p>
-<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">application</span>(<span class="keyword">_</span> <span class="params">application</span>: <span class="type">UIApplication</span>,</span><br><span class="line">                 <span class="params">didFinishLaunchingWithOptions</span> <span class="params">launchOptions</span>: [<span class="type">UIApplication</span>.<span class="params">LaunchOptionsKey</span>: <span class="keyword">Any</span>]<span class="operator">?</span>) -&gt; <span class="type">Bool</span> &#123;</span><br><span class="line">    <span class="comment">// 在这里做：SDK 初始化、推送注册、根视图设置</span></span><br><span class="line">    <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>这是真正干活的第一个入口。返回 false 会让系统认为启动失败。<br>iOS 13 之后引入了 SceneDelegate，多窗口相关的逻辑（比如 iPad 分屏）从 AppDelegate 拆了出来，窗口和根 ViewController 的设置移到 scene(_:willConnectTo:) 里做。</p>
-<p>④ ViewController 生命周期<br>这是日常开发接触最多的部分，几个关键方法的调用时机：</p>
-<table>
+    <div class="post-body" itemprop="articleBody"><p>一个端到端的 AI 语音对话系统，远不止是”说话 → AI 回答”这么简单。在用户开口到听到回复的 800ms 以内，系统需要依次完成语音检测、语音识别、大模型推理、语音合成和实时传输五个关键环节。</p>
+<p>本文以下图架构为脉络，逐层拆解每一层的核心设计思路和关键技术取舍。</p>
+<p><img data-src="/images/AI-Dialogue-Flow.PNG" alt="全链路 AI 对话系统五层架构"></p>
+<hr>
+<h2 id="全链路五层架构"><a href="#全链路五层架构" class="headerlink" title="全链路五层架构"></a>全链路五层架构</h2><h3 id="第一层：VAD-·-语音活动检测"><a href="#第一层：VAD-·-语音活动检测" class="headerlink" title="第一层：VAD · 语音活动检测"></a>第一层：VAD · 语音活动检测</h3><p>这是整个管道的<strong>门控</strong>。麦克风持续采集音频，VAD 以约 30ms 为帧长，实时判断当前帧是否包含人声——核心解决两个问题：</p>
+<ul>
+<li><strong>用户开始说话了</strong>：触发 ASR 开始工作</li>
+<li><strong>用户说完了</strong>：endpoint detection，触发后续推理</li>
+</ul>
+<p>常用方案有 WebRTC 内置 VAD 和 Silero VAD，误检率直接影响交互体验。</p>
+<hr>
+<h3 id="第二层：ASR-·-自动语音识别"><a href="#第二层：ASR-·-自动语音识别" class="headerlink" title="第二层：ASR · 自动语音识别"></a>第二层：ASR · 自动语音识别</h3><p>将语音帧转换为文字 token，现代 ASR 分三步走：</p>
+<ol>
+<li>用 <strong>Mel 频谱</strong>提取声学特征</li>
+<li>通过 <strong>Transformer &#x2F; Conformer</strong> 架构做序列建模</li>
+<li>用 <strong>CTC 或 Beam Search</strong> 解码出文本</li>
+</ol>
+<p>关键设计取舍在于<strong>流式 vs 离线</strong>——流式 ASR（如 FunASR 的实时模式）能在用户说话时就输出中间结果，大幅降低首包延迟，但准确率略低；Whisper 是非流式的高精度代表。</p>
+<hr>
+<h3 id="第三层：LLM-·-大语言模型推理"><a href="#第三层：LLM-·-大语言模型推理" class="headerlink" title="第三层：LLM · 大语言模型推理"></a>第三层：LLM · 大语言模型推理</h3><p>这是系统的”大脑”。文本进入 LLM 后，模型依据 System Prompt、对话历史（Memory）和可选的 RAG 知识库来生成回复。</p>
+<p>影响延迟的核心技术：</p>
+<ul>
+<li><strong>KV Cache</strong>：避免重复计算注意力，显著提升吞吐</li>
+<li><strong>流式输出（Streaming）</strong>：生成一个 token 就发给 TTS，而不是等全部生成完再发</li>
+</ul>
+<p>复杂场景下还会触发 <strong>Function Calling &#x2F; Agent</strong> 行动，通过 MCP 协议调用外部工具后再汇总回答。</p>
+<hr>
+<h3 id="第四层：TTS-·-语音合成"><a href="#第四层：TTS-·-语音合成" class="headerlink" title="第四层：TTS · 语音合成"></a>第四层：TTS · 语音合成</h3><p>把文本转回人声，流程是：</p>
+<blockquote>
+<p>文本前端（分词 + 韵律预测 + G2P 音素转换）→ 声学模型（VITS &#x2F; FastSpeech2 预测 Mel 频谱）→ 声码器（HiFi-GAN &#x2F; WaveNet 还原 PCM 波形）</p>
+</blockquote>
+<p>现代 TTS 支持<strong>零样本音色克隆</strong>（仅需 3 秒参考音频），以及与 LLM 联动的情感 &#x2F; 语速控制。</p>
+<p>流式 TTS 的关键在于：<strong>拿到 LLM 第一句话后就立刻开始合成，不等全文</strong>，这是控制端到端延迟的核心手段之一。</p>
+<hr>
+<h3 id="第五层：RTC-·-实时音频传输"><a href="#第五层：RTC-·-实时音频传输" class="headerlink" title="第五层：RTC · 实时音频传输"></a>第五层：RTC · 实时音频传输</h3><p>合成好的音频经 <strong>WebRTC + Opus</strong> 编码发回客户端播放。这一层还承担<strong>打断检测</strong>的职责——</p>
+<p>当用户在 AI 说话过程中插话，VAD 检测到后立刻中止当前 TTS 播放，清空队列，将新语音送入 ASR，实现真正的<strong>全双工对话</strong>。同时，RNNoise 在传输层做实时降噪，进一步保障语音质量。</p>
+<hr>
+<h2 id="端到端延迟拆解"><a href="#端到端延迟拆解" class="headerlink" title="端到端延迟拆解"></a>端到端延迟拆解</h2><table>
 <thead>
 <tr>
-<th>方法</th>
-<th>调用时机</th>
-<th>适合做什么</th>
+<th>层级</th>
+<th>典型延迟</th>
 </tr>
 </thead>
 <tbody><tr>
-<td>loadView</td>
-<td>视图还不存在时</td>
-<td>自定义根 view（少用）</td>
+<td>VAD</td>
+<td>~30ms</td>
 </tr>
 <tr>
-<td>viewDidLoad</td>
-<td>视图加载完，只调一次</td>
-<td>UI 初始化、绑定数据</td>
+<td>ASR</td>
+<td>~200ms</td>
 </tr>
 <tr>
-<td>viewWillAppear</td>
-<td>每次显示前</td>
-<td>刷新数据、注册通知</td>
+<td>LLM</td>
+<td>~300ms（首 token）</td>
 </tr>
 <tr>
-<td>viewDidAppear</td>
-<td>每次显示后</td>
-<td>开始动画、开始录音</td>
+<td>TTS</td>
+<td>~200ms</td>
 </tr>
 <tr>
-<td>viewWillDisappear</td>
-<td>每次消失前</td>
-<td>保存状态、取消网络请求</td>
+<td>RTC</td>
+<td>~50ms</td>
 </tr>
 <tr>
-<td>viewDidDisappear</td>
-<td>每次消失后</td>
-<td>移除通知、暂停播放</td>
+<td><strong>合计</strong></td>
+<td><strong>&lt; 800ms</strong></td>
 </tr>
 </tbody></table>
-<p>⑤ RunLoop：App 真正的心跳<br>UIApplicationMain 启动之后，主线程就进入了一个 永不退出的事件循环，这就是 RunLoop。它的工作原理是：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">有事件来了？→ 处理（触摸、定时器、网络回调……）</span><br><span class="line">没事件？→ 休眠，让出 CPU</span><br></pre></td></tr></table></figure>
-
-<p>所有的用户交互、网络回调、动画帧渲染，本质上都是”往 RunLoop 里投递事件”，然后等 RunLoop 调度到你。<br>这也是为什么在主线程做耗时操作会卡 UI——RunLoop 被占着，其他事件（包括屏幕刷新）都排不上队。<br>参考资料<br><a target="_blank" rel="noopener" href="https://mp.weixin.qq.com/s/hTyudBBgFyq8Y3apr9xBTQ">iOS之Runloop</a></p>
+<p>每一层的流式化改造都是压缩整体延迟的关键——ASR 流式输出、LLM 流式推理、TTS 流式合成，三层叠加才能把端到端延迟控制在体验可接受的范围内。</p>
+<hr>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
+<li><a target="_blank" rel="noopener" href="https://www.shengwang.cn/blog/blogdetail/AI-benchmark/">从 ASR 到 TTS，全链路对话模型打通意味着什么？</a> —— 声网</li>
+<li><a target="_blank" rel="noopener" href="https://www.zedyer.com/iot-knowledge/rtc-ai-voice-agent/">RTC+AI 构建全双工对话式 AI：实时通信驱动的 AI 智能体应用</a> —— Zedyer</li>
+<li><a target="_blank" rel="noopener" href="https://voxcpm.modelbest.cn/">VoxCPM2：面壁智能 × 清华大学人机语音交互实验室开源 2B 端侧对话小模型</a></li>
+</ul>
 
     </div>
 
@@ -390,7 +412,7 @@
   </li>
   <li class="post-copyright-link">
       <strong>本文链接：</strong>
-      <a href="https://dcheric.github.io/2026/03/30/from_runtime_tor_runloop/" title="从Runtime到Runloop">https://dcheric.github.io/2026/03/30/from_runtime_tor_runloop/</a>
+      <a href="https://dcheric.github.io/2026/04/10/AI-Dialogue-Flow/" title="全链路 AI 对话系统架构解析：VAD · ASR · LLM · TTS · RTC">https://dcheric.github.io/2026/04/10/AI-Dialogue-Flow/</a>
   </li>
   <li class="post-copyright-license">
       <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
@@ -399,23 +421,23 @@
 </div>
 
           <div class="post-tags">
-              <a href="/tags/Runtime/" rel="tag"><i class="fa fa-tag"></i> Runtime</a>
-              <a href="/tags/Runloop/" rel="tag"><i class="fa fa-tag"></i> Runloop</a>
-              <a href="/tags/iOS%E5%BC%80%E5%8F%91/" rel="tag"><i class="fa fa-tag"></i> iOS开发</a>
+              <a href="/tags/AI-Agent/" rel="tag"><i class="fa fa-tag"></i> AI Agent</a>
+              <a href="/tags/RTC/" rel="tag"><i class="fa fa-tag"></i> RTC</a>
+              <a href="/tags/%E5%AE%9E%E6%97%B6%E5%AF%B9%E8%AF%9D/" rel="tag"><i class="fa fa-tag"></i> 实时对话</a>
+              <a href="/tags/TTS/" rel="tag"><i class="fa fa-tag"></i> TTS</a>
+              <a href="/tags/ASR/" rel="tag"><i class="fa fa-tag"></i> ASR</a>
+              <a href="/tags/LLM/" rel="tag"><i class="fa fa-tag"></i> LLM</a>
           </div>
 
         
 
           <div class="post-nav">
             <div class="post-nav-item">
-                <a href="/2026/03/29/hello-blog/" rel="prev" title="使用 Hexo + NexT + GitHub Pages 搭建个人博客：完整步骤与原理说明">
-                  <i class="fa fa-angle-left"></i> 使用 Hexo + NexT + GitHub Pages 搭建个人博客：完整步骤与原理说明
+                <a href="/2026/04/10/TTS/" rel="prev" title="从&quot;文本朗读&quot;到&quot;实时语音反馈&quot;：一套移动端 TTS 业务架构实践">
+                  <i class="fa fa-angle-left"></i> 从"文本朗读"到"实时语音反馈"：一套移动端 TTS 业务架构实践
                 </a>
             </div>
             <div class="post-nav-item">
-                <a href="/2026/03/31/ios-binary-reorder-optimization/" rel="next" title="iOS二进制重排冷启动优化：原理、实操与反思">
-                  iOS二进制重排冷启动优化：原理、实操与反思 <i class="fa fa-angle-right"></i>
-                </a>
             </div>
           </div>
     </footer>
