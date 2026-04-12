@@ -2678,7 +2678,11 @@ flowchart TD
 <li>能不能在被打断后快速恢复；</li>
 <li>能不能成为整个实时交互链路里可靠的一环。</li>
 </ul>
-<p>当我们从这个角度重新理解 TTS，它就不再只是“给文本配声音”，而是在产品体验层面，真正承担起了 <strong>让 AI 回答变得可感知、可打断、可持续</strong> 的责任。</p>
+<p>当我们从这个角度重新理解 TTS，它就不再只是”给文本配声音”，而是在产品体验层面，真正承担起了 <strong>让 AI 回答变得可感知、可打断、可持续</strong> 的责任。</p>
+<hr>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
+<li><a href="https://www.bilibili.com/video/BV17U7jziEPD/">AI 语音克隆进入”零样本”时代？解析 TTS 模型四大流派与问鼎榜首的 MiniMax【硅谷101】</a> —— 硅谷101</li>
+</ul>
 ]]></content>
       <categories>
         <category>iOS架构设计</category>
