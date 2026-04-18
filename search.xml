@@ -3139,15 +3139,15 @@ flowchart TD
 <p>现有的业务代码逻辑是：</p>
 <figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">点击 item → 创建新 WebView → load H5 → 等页面起来 → 再展示内容</span><br></pre></td></tr></table></figure>
 
-<p><code>LXMemoryListView</code> 打开的 <code>selectedNoteUrl</code> 实际上是固定的 <code>livisNotepadURL</code>，noteId 是通过 <code>customData</code> 传进去的，不是每条笔记一个不同 URL。那么，完全可以提前把记事本 H5 “壳子页”预加载好，点击后直接复用这一个 WKWebView，再把当前 noteId 注入进去。这比每条 item 单独预加载一个 H5 简单很多、风险也低很多。</p>
+<p><code>MemoryListView</code> 打开的 <code>selectedNoteUrl</code> 实际上是固定的 <code>livisNotepadURL</code>，noteId 是通过 <code>customData</code> 传进去的，不是每条笔记一个不同 URL。那么，完全可以提前把记事本 H5 “壳子页”预加载好，点击后直接复用这一个 WKWebView，再把当前 noteId 注入进去。这比每条 item 单独预加载一个 H5 简单很多、风险也低很多。</p>
 <p>所以修改后的方案是：</p>
 <blockquote>
 <p>页面进入时就预取 token + 预热 WebKit + 预加载记事本 H5 壳子 → 点击 item 时直接复用已加载好的 WebView → 注入 noteId → 展示</p>
 </blockquote>
 <p>也就是说暂时可以先做上面优化里面的 <strong>1（预热）、3（预加载）、4（注入 Cookie）</strong> 三项优化。</p>
 <hr>
-<h3 id="（二）具体改动"><a href="#（二）具体改动" class="headerlink" title="（二）具体改动"></a>（二）具体改动</h3><p>要想把预加载出来的 WKWebView 真正复用到正式展示链路里，就需要修改 LXUILib 库。</p>
-<p>因为当前 <code>LXLivisWebViewController</code> 最终会走 Pod 里的 <code>LXWebViewController</code>，创建自己的 <code>wkWebView</code> 并自动 <code>loadRequest</code>。如果不改 Pod，就很难把 <code>LXWebViewPreloader.shared.preloadedWebView</code> 真正塞进去复用。</p>
+<h3 id="（二）具体改动"><a href="#（二）具体改动" class="headerlink" title="（二）具体改动"></a>（二）具体改动</h3><p>要想把预加载出来的 WKWebView 真正复用到正式展示链路里，就需要修改 UILib 库。</p>
+<p>因为当前 <code>LivisWebViewController</code> 最终会走 Pod 里的 <code>WebViewController</code>，创建自己的 <code>wkWebView</code> 并自动 <code>loadRequest</code>。如果不改 Pod，就很难把 <code>WebViewPreloader.shared.preloadedWebView</code> 真正塞进去复用。</p>
 <h4 id="一期"><a href="#一期" class="headerlink" title="一期"></a>一期</h4><p>暂时先不做较大改动，先采用以下方案：</p>
 <p>不再追求复用同一个预加载 WKWebView 实例（那需要改 Pod 基类），而是改成三件事：</p>
 <ul>
@@ -3157,8 +3157,8 @@ flowchart TD
 </ul>
 <p>具体修改：</p>
 <ul>
-<li>新增记事本 H5 的统一预热配置与辅助方法到 <code>LXWebViewUtils.swift</code>，包括 notebook URL、提前种 cookie、构造与正式链路更接近的预热 <code>WKWebViewConfiguration</code>、为预热 WebView 设置共享 processPool 和 UserAgent。</li>
-<li>扩展 <code>LXWebViewPreloader.swift</code>，支持在预热时传入自定义 <code>webViewConfigurator</code>，这样就能在不碰 Pod 基类的前提下，让预热出来的 WebView 更贴近正式打开链路。最后把 <code>LXMemoryListView.swift</code> 的 <code>prepareNotebookH5IfNeeded()</code> 改成统一走这些工具方法，减少点击前后的配置分叉。</li>
+<li>新增记事本 H5 的统一预热配置与辅助方法到 <code>WebViewUtils.swift</code>，包括 notebook URL、提前种 cookie、构造与正式链路更接近的预热 <code>WKWebViewConfiguration</code>、为预热 WebView 设置共享 processPool 和 UserAgent。</li>
+<li>扩展 <code>WebViewPreloader.swift</code>，支持在预热时传入自定义 <code>webViewConfigurator</code>，这样就能在不碰 Pod 基类的前提下，让预热出来的 WebView 更贴近正式打开链路。最后把 <code>MemoryListView.swift</code> 的 <code>prepareNotebookH5IfNeeded()</code> 改成统一走这些工具方法，减少点击前后的配置分叉。</li>
 </ul>
 <p>预期的效果：</p>
 <ul>
