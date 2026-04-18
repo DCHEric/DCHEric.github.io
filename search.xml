@@ -3010,20 +3010,9 @@ flowchart TD
   </entry>
   <entry>
     <title>H5详情页加载白屏优化：WKWebView渲染原理与实践</title>
-    <url>/2026/03/27/h5-webview-white-screen-optimization/</url>
+    <url>/2026/04/18/h5-webview-white-screen-optimization/</url>
     <content><![CDATA[<h1 id="H5详情页加载白屏优化"><a href="#H5详情页加载白屏优化" class="headerlink" title="H5详情页加载白屏优化"></a>H5详情页加载白屏优化</h1><span id="more"></span>
 
-<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
-<li><a href="https://mp.weixin.qq.com/s/Xqr6rQBbx7XPoBESEFuXJw">今日头条品质优化 - 图文详情页秒开实践</a></li>
-<li><a href="https://zhuanlan.zhihu.com/p/393177043">Android &#x2F; iOS Webview 容器下 JSBridge SDK 原理浅析 —— 前端视角</a></li>
-<li><a href="https://mp.weixin.qq.com/s/PtzMWWcTKwPZWXFFkLQ7yA">H5开屏从龟速到闪电，企微是如何做到的</a></li>
-<li><a href="https://mp.weixin.qq.com/s/AV2SwFfwwJH7xyrIBJemgw">网易新闻客户端 H5 秒开优化</a></li>
-<li><a href="https://mp.weixin.qq.com/s/_DdaUaUVojHPhOS8XEZl5g">淘宝页面首帧优化的经验和心得</a></li>
-<li><a href="https://mp.weixin.qq.com/s/FmGP0oMy1ratWHAMeOGrkA">将淘宝直播间融入H5页面的技术探索</a></li>
-<li><a href="https://mp.weixin.qq.com/s/VFXSapEnCaYcRp-ODE1gdA">淘宝客户端动态化页面搭建</a></li>
-<li><a href="https://mp.weixin.qq.com/s/O6daxmeTuLE1b7d9nTQiCw">淘宝承接页是如何实现秒开的</a></li>
-</ul>
-<hr>
 <h2 id="一、WebView-渲染流程"><a href="#一、WebView-渲染流程" class="headerlink" title="一、WebView 渲染流程"></a>一、WebView 渲染流程</h2><p><img data-src="/images/H5/1280X1280.PNG" alt="WKWebView 渲染流程"></p>
 <p>整个流程由 WebKit 框架驱动，运行在 iOS 系统的 WebContent 沙盒进程中。</p>
 <hr>
@@ -3184,6 +3173,17 @@ flowchart TD
 
 <p>速度快的话会看不到 loading 动画，但是还是会有白屏间隙时间。</p>
 <h4 id="二期"><a href="#二期" class="headerlink" title="二期"></a>二期</h4><p>未完待续…</p>
+<hr>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
+<li><a href="https://mp.weixin.qq.com/s/Xqr6rQBbx7XPoBESEFuXJw">今日头条品质优化 - 图文详情页秒开实践</a></li>
+<li><a href="https://zhuanlan.zhihu.com/p/393177043">Android &#x2F; iOS Webview 容器下 JSBridge SDK 原理浅析 —— 前端视角</a></li>
+<li><a href="https://mp.weixin.qq.com/s/PtzMWWcTKwPZWXFFkLQ7yA">H5开屏从龟速到闪电，企微是如何做到的</a></li>
+<li><a href="https://mp.weixin.qq.com/s/AV2SwFfwwJH7xyrIBJemgw">网易新闻客户端 H5 秒开优化</a></li>
+<li><a href="https://mp.weixin.qq.com/s/_DdaUaUVojHPhOS8XEZl5g">淘宝页面首帧优化的经验和心得</a></li>
+<li><a href="https://mp.weixin.qq.com/s/FmGP0oMy1ratWHAMeOGrkA">将淘宝直播间融入H5页面的技术探索</a></li>
+<li><a href="https://mp.weixin.qq.com/s/VFXSapEnCaYcRp-ODE1gdA">淘宝客户端动态化页面搭建</a></li>
+<li><a href="https://mp.weixin.qq.com/s/O6daxmeTuLE1b7d9nTQiCw">淘宝承接页是如何实现秒开的</a></li>
+</ul>
 ]]></content>
       <categories>
         <category>iOS</category>
