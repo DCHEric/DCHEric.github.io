@@ -2,321 +2,139 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width">
-<meta name="theme-color" content="#222" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#222" media="(prefers-color-scheme: dark)"><meta name="generator" content="Hexo 7.3.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="探讨 AI Coding 时代的工程方法论演进：从 Vibe Coding 到基于文件对齐，再到 SDD（规范驱动开发）。深入分析如何通过 Harness Engineering 搭建 AI 协作环境，让 AI 从一次性工具进化为团队长期依赖的工程伙伴。包含 OpenSpec、Spec-kit 等实战工具推荐，帮助开发者将 AI 嵌入工作流，成为真正的 AI Native Coder。">
+  <meta name="keywords" content="">
+  <meta name="author" content="DCH">
+  <title>Harness Engineering：AI Coding 时代如何做 AI Native Coder | DCH's Blog</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="canonical" href="https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/">
+<meta name="generator" content="Hexo 7.3.0"></head>
+<body>
+<div id="sidebar-overlay" class="sidebar-overlay"></div>
 
-  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
-  <link rel="mask-icon" href="/images/logo.svg" color="#222">
-
-<link rel="stylesheet" href="/css/main.css">
-
-
-
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
-
-<script class="next-config" data-name="main" type="application/json">{"hostname":"dcheric.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.27.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12,"width":300},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":true,"style":"flat"},"fold":{"enable":false,"height":500},"language":true},"bookmark":{"enable":true,"color":"#222","save":"auto"},"mediumzoom":true,"lazyload":true,"pangu":false,"comments":{"style":"tabs","active":"utterances","storage":true,"lazyload":false,"nav":null,"nav_id":"comments","activeClass":"utterances"},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"path":"/search.xml","localsearch":{"enable":true,"top_n_per_article":1,"unescape":false,"preload":false,"trigger":"auto"}}</script><script src="/js/config.js" defer></script>
-
-    <meta name="description" content="探讨 AI Coding 时代的工程方法论演进：从 Vibe Coding 到基于文件对齐，再到 SDD（规范驱动开发）。深入分析如何通过 Harness Engineering 搭建 AI 协作环境，让 AI 从一次性工具进化为团队长期依赖的工程伙伴。包含 OpenSpec、Spec-kit 等实战工具推荐，帮助开发者将 AI 嵌入工作流，成为真正的 AI Native Coder。">
-<meta property="og:type" content="article">
-<meta property="og:title" content="Harness Engineering：AI Coding 时代如何做 AI Native Coder">
-<meta property="og:url" content="https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/index.html">
-<meta property="og:site_name" content="DCH&#39;s Blog">
-<meta property="og:description" content="探讨 AI Coding 时代的工程方法论演进：从 Vibe Coding 到基于文件对齐，再到 SDD（规范驱动开发）。深入分析如何通过 Harness Engineering 搭建 AI 协作环境，让 AI 从一次性工具进化为团队长期依赖的工程伙伴。包含 OpenSpec、Spec-kit 等实战工具推荐，帮助开发者将 AI 嵌入工作流，成为真正的 AI Native Coder。">
-<meta property="og:locale" content="zh_CN">
-<meta property="article:published_time" content="2026-03-31T09:30:00.000Z">
-<meta property="article:modified_time" content="2026-03-31T09:30:59.845Z">
-<meta property="article:author" content="DCH">
-<meta property="article:tag" content="AI Coding">
-<meta property="article:tag" content="Harness Engineering">
-<meta property="article:tag" content="软件工程">
-<meta property="article:tag" content="开发方法论">
-<meta property="article:tag" content="SDD">
-<meta name="twitter:card" content="summary">
-
-
-<link rel="canonical" href="https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/">
-
-
-<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/","path":"2026/03/31/harness-engineering-ai-native-coder/","title":"Harness Engineering：AI Coding 时代如何做 AI Native Coder"}</script>
-
-<script class="next-config" data-name="calendar" type="application/json">""</script>
-<title>Harness Engineering：AI Coding 时代如何做 AI Native Coder | DCH's Blog</title>
-  
-
-  <script src="/js/third-party/analytics/baidu-analytics.js" defer></script>
-  <script async src="https://hm.baidu.com/hm.js?30591dbd2ce90c91765c7f3e174efc9a"></script>
-
-
-
-
-
-
-
-  
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/medium-zoom/1.1.0/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous" defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/lozad.js/1.16.0/lozad.min.js" integrity="sha256-mOFREFhqmHeQbXpK2lp4nA3qooVgACfh88fpJftLBbc=" crossorigin="anonymous" defer></script>
-<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script><script src="/js/bookmark.js" defer></script>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/hexo-generator-searchdb/1.5.0/search.js" integrity="sha256-xFC6PJ82SL9b3WkGjFavNiA9gm5z6UBxWPiu4CYjptg=" crossorigin="anonymous" defer></script>
-<script src="/js/third-party/search/local-search.js" defer></script>
-
-
-  <script class="next-config" data-name="mermaid" type="application/json">{"enable":true,"theme":{"light":"default","dark":"dark"},"js":{"url":"https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.10.1/mermaid.min.js","integrity":"sha256-BmQmdWDS8X2OTbrwELWK366LV6escyWhHHe0XCTU/Hk="}}</script>
-  <script src="/js/third-party/tags/mermaid.js" defer></script>
-
-
-
-
-
-  
-
-
-
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/quicklink/3.0.1/quicklink.umd.js" integrity="sha256-44BednzIpUeQJcY8qtLyarFu0UCCTbgmWOvaoehiFQQ=" crossorigin="anonymous" defer></script>
-  <script class="next-config" data-name="quicklink" type="application/json">{"enable":true,"home":true,"archive":true,"delay":true,"timeout":3000,"priority":true,"url":"https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/"}</script>
-  <script src="/js/third-party/quicklink.js" defer></script>
-
-  <noscript>
-    <link rel="stylesheet" href="/css/noscript.css">
-  </noscript>
-</head>
-
-<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
-  <div class="headband"></div>
-
-  <main class="main">
-    <div class="column">
-      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
-  <div class="site-nav-toggle">
-    <div class="toggle" aria-label="切换导航栏" role="button">
-        <span class="toggle-line"></span>
-        <span class="toggle-line"></span>
-        <span class="toggle-line"></span>
-    </div>
-  </div>
-
-  <div class="site-meta">
-
-    <a href="/" class="brand" rel="start">
-      <i class="logo-line"></i>
-      <p class="site-title">DCH's Blog</p>
-      <i class="logo-line"></i>
+<div class="layout">
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <a href="/" class="sidebar-logo">
+      <div class="logo-prompt">~ /dch/blog</div>
+      <div class="logo-name">DCH<span class="cursor"></span></div>
+      <div class="logo-tagline">
+        <strong>iOS</strong> · <strong>RN</strong> · <strong>大前端</strong> · <strong>AI Agent</strong>
+      </div>
     </a>
-      <p class="site-subtitle" itemprop="description">故乡的樱花开了，该回去看看了</p>
-  </div>
 
-  <div class="site-nav-right">
-    <div class="toggle popup-trigger" aria-label="搜索" role="button">
-        <i class="fa fa-search fa-fw fa-lg"></i>
-    </div>
-  </div>
-</div>
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Navigation</div>
+      <a href="/" class="nav-item">
+        <span class="nav-icon">#</span>
+        文章列表
+        <span class="nav-badge">10</span>
+      </a>
+      <a href="/archives" class="nav-item">
+        <span class="nav-icon">≡</span>
+        归档
+      </a>
+      <a href="/about" class="nav-item">
+        <span class="nav-icon">></span>
+        关于我
+      </a>
 
-
-
-<nav class="site-nav">
-  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
-      <li class="menu-item menu-item-search">
-        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+      <div class="nav-section-label" style="margin-top:24px">Categories</div>
+      <a href="/" class="cat-item" data-filter="all">
+        <span class="cat-dot" style="background:var(--text-2)"></span>
+        全部
+        <span class="cat-count">10</span>
+      </a>
+        <a href="/categories/AI%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" class="cat-item">
+          <span class="cat-dot dot-ai"></span>
+          AI架构设计
+          <span class="cat-count">1</span>
         </a>
-      </li>
-  </ul>
-</nav>
-
-
-
-  <div class="search-pop-overlay">
-    <div class="popup search-popup">
-      <div class="search-header">
-        <span class="search-icon">
-          <i class="fa fa-search"></i>
-        </span>
-        <div class="search-input-container">
-          <input autocomplete="off" autocapitalize="off" maxlength="80"
-                placeholder="搜索..." spellcheck="false"
-                type="search" class="search-input">
-        </div>
-        <span class="popup-btn-close" role="button">
-          <i class="fa fa-times-circle"></i>
-        </span>
-      </div>
-      <div class="search-result-container">
-        <div class="search-result-icon">
-          <i class="fa fa-spinner fa-pulse fa-5x"></i>
-        </div>
-      </div>
-    </div>
-  </div>
-
-</header>
-        
-  
-  <aside class="sidebar">
-
-    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
-      <ul class="sidebar-nav">
-        <li class="sidebar-nav-toc">
-          文章目录
-        </li>
-        <li class="sidebar-nav-overview">
-          站点概览
-        </li>
-      </ul>
-
-      <div class="sidebar-panel-container">
-        <!--noindex-->
-        <div class="post-toc-wrap sidebar-panel">
-            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Harness-Engineering%EF%BC%9A%E8%AF%B4%E7%99%BD%E4%BA%86%E5%B0%B1%E6%98%AF%E7%BB%99AI%E6%90%AD%E4%B8%AA%E7%8E%AF%E5%A2%83"><span class="nav-number">1.</span> <span class="nav-text">Harness Engineering：说白了就是给AI搭个环境</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%9B%B8%E5%85%B3%E8%B5%84%E6%BA%90"><span class="nav-number">2.</span> <span class="nav-text">相关资源</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Agent-Model-Harness"><span class="nav-number">3.</span> <span class="nav-text">Agent &#x3D; Model + Harness</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E9%98%B6%E6%AE%B5%EF%BC%9A%E4%BB%8E%E4%BC%A0%E7%BB%9F%E7%BC%96%E7%A8%8B%E5%88%B0Vibe-Coding"><span class="nav-number">4.</span> <span class="nav-text">第一阶段：从传统编程到Vibe Coding</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Vibe-Coding-%E5%AD%A6%E4%B9%A0%E8%B5%84%E6%BA%90"><span class="nav-number">4.1.</span> <span class="nav-text">Vibe Coding 学习资源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Vibe-Coding-%E7%9A%84%E5%B1%80%E9%99%90%E6%80%A7"><span class="nav-number">4.2.</span> <span class="nav-text">Vibe Coding 的局限性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E9%98%B6%E6%AE%B5%EF%BC%9A%E6%8E%8C%E6%8F%A1%E8%AE%A9AI%E6%8C%81%E7%BB%AD%E5%AF%B9%E9%BD%90%E7%9A%84%E8%83%BD%E5%8A%9B"><span class="nav-number">5.</span> <span class="nav-text">第二阶段：掌握让AI持续对齐的能力</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%AE%A9AI%E6%8C%81%E7%BB%AD%E5%AF%B9%E9%BD%90%E4%BD%A0%E7%9A%84%E6%84%8F%E5%9B%BE"><span class="nav-number">5.1.</span> <span class="nav-text">1. 让AI持续对齐你的意图</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%AE%A9AI%E6%8C%81%E7%BB%AD%E5%AF%B9%E9%BD%90%E4%BD%A0%E7%9A%84%E4%BB%BB%E5%8A%A1"><span class="nav-number">5.2.</span> <span class="nav-text">2. 让AI持续对齐你的任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%9F%BA%E4%BA%8E%E6%96%87%E4%BB%B6%E7%9A%84AI-Coding%E6%96%B9%E6%A1%88"><span class="nav-number">5.3.</span> <span class="nav-text">3. 基于文件的AI Coding方案</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E9%98%B6%E6%AE%B5%EF%BC%9A%E4%BB%8E%E4%B8%AA%E4%BA%BA%E6%8F%90%E6%95%88%E5%88%B0%E5%9B%A2%E9%98%9F%E5%8D%8F%E4%BD%9C%E7%9A%84SDD-Coding"><span class="nav-number">6.</span> <span class="nav-text">第三阶段：从个人提效到团队协作的SDD Coding</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%BD%AF%E4%BB%B6%E5%BC%80%E5%8F%91%E5%8D%8F%E4%BD%9C%E8%8C%83%E5%BC%8F%E6%BC%94%E5%8F%98"><span class="nav-number">6.1.</span> <span class="nav-text">1. 软件开发协作范式演变</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BB%80%E4%B9%88%E6%98%AFSDD-Coding"><span class="nav-number">6.2.</span> <span class="nav-text">2. 什么是SDD Coding</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#SDD-Coding-%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B"><span class="nav-number">6.3.</span> <span class="nav-text">SDD Coding 核心流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%A7%84%E8%8C%83%E6%98%AFAI-Coding%E6%97%B6%E4%BB%A3%E7%9A%84%E5%9B%A2%E9%98%9F%E8%B5%84%E4%BA%A7"><span class="nav-number">6.4.</span> <span class="nav-text">3. 规范是AI Coding时代的团队资产</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%B8%89%E7%B1%BB%E5%9B%A2%E9%98%9F%E7%9F%A5%E8%AF%86%E8%B5%84%E4%BA%A7"><span class="nav-number">6.4.1.</span> <span class="nav-text">三类团队知识资产</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-SDD-Coding%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C"><span class="nav-number">6.5.</span> <span class="nav-text">4. SDD Coding实战经验</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E9%A1%BE%E8%99%91%E4%B8%80%EF%BC%9A%E5%85%88%E5%86%99%E8%A7%84%E8%8C%83%EF%BC%8C%E4%BC%9A%E4%B8%8D%E4%BC%9A%E6%8B%96%E6%85%A2%E5%BC%80%E5%8F%91%E9%80%9F%E5%BA%A6%EF%BC%9F"><span class="nav-number">6.5.1.</span> <span class="nav-text">顾虑一：先写规范，会不会拖慢开发速度？</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E9%A1%BE%E8%99%91%E4%BA%8C%EF%BC%9A%E5%A6%82%E6%9E%9CAI%E8%AF%AF%E8%A7%A3%E4%BA%86%E8%A7%84%E8%8C%83%E6%80%8E%E4%B9%88%E5%8A%9E%EF%BC%9F"><span class="nav-number">6.5.2.</span> <span class="nav-text">顾虑二：如果AI误解了规范怎么办？</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E9%A1%BE%E8%99%91%E4%B8%89%EF%BC%9A%E5%A6%82%E4%BD%95%E9%80%89%E5%8F%96%E8%A7%84%E8%8C%83%E6%A8%A1%E7%89%88%E5%B9%B6%E5%BD%A2%E6%88%90%E8%87%AA%E5%B7%B1%E5%9B%A2%E9%98%9F%E7%9A%84%E8%A7%84%E8%8C%83%EF%BC%9F"><span class="nav-number">6.5.3.</span> <span class="nav-text">顾虑三：如何选取规范模版并形成自己团队的规范？</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AC%AC%E5%9B%9B%E9%98%B6%E6%AE%B5%EF%BC%9A%E6%8A%8AAI%E4%BD%BF%E7%94%A8%E5%86%85%E5%8C%96%E4%B8%BA%E6%9C%AC%E8%83%BD%EF%BC%8C%E6%88%90%E4%B8%BA%E7%9C%9F%E6%AD%A3%E7%9A%84AI-Native-Coder"><span class="nav-number">7.</span> <span class="nav-text">第四阶段：把AI使用内化为本能，成为真正的AI Native Coder</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%AA%E6%9D%A5%E5%80%BC%E5%BE%97%E6%8E%A2%E7%B4%A2%E7%9A%84%E6%96%B9%E5%90%91"><span class="nav-number">7.1.</span> <span class="nav-text">未来值得探索的方向</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">8.</span> <span class="nav-text">总结</span></a></li></ol></div>
-        </div>
-        <!--/noindex-->
-
-        <div class="site-overview-wrap sidebar-panel">
-          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
-    <img class="site-author-image" itemprop="image" alt="DCH"
-      src="/images/avatar.jpg">
-  <p class="site-author-name" itemprop="name">DCH</p>
-  <div class="site-description" itemprop="description">专注于iOS、RN、大前端和AI Agent技术</div>
-</div>
-<div class="site-state-wrap animated">
-  <nav class="site-state">
-      <div class="site-state-item site-state-posts">
-        <a href="/archives/">
-          <span class="site-state-item-count">10</span>
-          <span class="site-state-item-name">日志</span>
+        <a href="/categories/iOS%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" class="cat-item">
+          <span class="cat-dot dot-ios"></span>
+          iOS架构设计
+          <span class="cat-count">3</span>
         </a>
-      </div>
-      <div class="site-state-item site-state-categories">
-          <a href="/categories/">
-        <span class="site-state-item-count">5</span>
-        <span class="site-state-item-name">分类</span></a>
-      </div>
-      <div class="site-state-item site-state-tags">
-          <a href="/tags/">
-        <span class="site-state-item-count">38</span>
-        <span class="site-state-item-name">标签</span></a>
-      </div>
-  </nav>
-</div>
-  <div class="links-of-author animated">
-      <span class="links-of-author-item">
-        <a href="https://github.com/DCHEric" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;DCHEric" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
-      </span>
-      <span class="links-of-author-item">
-        <a href="https://x.com/DCHtigerr" title="X → https:&#x2F;&#x2F;x.com&#x2F;DCHtigerr" rel="noopener me" target="_blank"><i class="fab fa-x-twitter fa-fw"></i>X</a>
-      </span>
-      <span class="links-of-author-item">
-        <a href="https://www.xiaohongshu.com/user/profile/5ad5ca7211be103d038c92c5" title="小红书 → https:&#x2F;&#x2F;www.xiaohongshu.com&#x2F;user&#x2F;profile&#x2F;5ad5ca7211be103d038c92c5" rel="noopener me" target="_blank"><i class="fas fa-leaf fa-fw"></i>小红书</a>
-      </span>
-  </div>
+        <a href="/categories/VibeCoding%E6%96%B9%E6%B3%95%E8%AE%BA/" class="cat-item">
+          <span class="cat-dot dot-vibe"></span>
+          VibeCoding方法论
+          <span class="cat-count">2</span>
+        </a>
+        <a href="/categories/iOS/" class="cat-item">
+          <span class="cat-dot dot-ios"></span>
+          iOS
+          <span class="cat-count">3</span>
+        </a>
+        <a href="/categories/%E5%BC%80%E6%BA%90%E9%A1%B9%E7%9B%AE/" class="cat-item">
+          <span class="cat-dot dot-other"></span>
+          开源项目
+          <span class="cat-count">1</span>
+        </a>
+    </nav>
 
-        </div>
+    <div class="sidebar-footer">
+      <div class="sys-stat">
+        <span class="stat-dot"></span>
+        dcheric.github.io · online
       </div>
-        <div class="back-to-top animated" role="button" aria-label="返回顶部">
-          <i class="fa fa-arrow-up"></i>
-          <span>0%</span>
-        </div>
-    </div>
-
-    
-    <div class="sidebar-inner sidebar-blogroll">
-      <div class="links-of-blogroll animated">
-        <div class="links-of-blogroll-title"><i class="fa fa-bars fa-fw"></i>
-          链接
-        </div>
-        <ul class="links-of-blogroll-list">
-            <li class="links-of-blogroll-item">
-              <a href="/" title="&#x2F;">首页</a>
-            </li>
-            <li class="links-of-blogroll-item">
-              <a href="/about/" title="&#x2F;about&#x2F;">关于</a>
-            </li>
-            <li class="links-of-blogroll-item">
-              <a href="/tags/" title="&#x2F;tags&#x2F;">标签</a>
-            </li>
-            <li class="links-of-blogroll-item">
-              <a href="/categories/" title="&#x2F;categories&#x2F;">分类</a>
-            </li>
-            <li class="links-of-blogroll-item">
-              <a href="/archives/" title="&#x2F;archives&#x2F;">归档</a>
-            </li>
-        </ul>
+      <div class="sys-stat">
+        <span style="color:var(--text-3);font-family:var(--mono);font-size:10px">
+          build: hexo@7.3.0
+        </span>
       </div>
     </div>
   </aside>
 
+  <!-- MAIN -->
+  <div class="main">
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <div class="topbar-path">
+        
+  <a href="/" style="color:var(--text-2);transition:color .18s">dch</a>
+  <span class="sep">/</span>
+    <a href="/categories/VibeCoding%E6%96%B9%E6%B3%95%E8%AE%BA/" style="color:var(--text-2);transition:color .18s">VibeCoding方法论</a>
+    <span class="sep">/</span>
+  <span class="current" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Harness Engineering：AI Coding 时代如何做 AI Native Coder</span>
 
-    </div>
+      </div>
+      <div class="topbar-right">
+        <button class="topbar-btn hamburger" id="hamburger" aria-label="菜单" title="打开菜单">☰</button>
+        <button class="topbar-btn" id="tweaks-toggle-btn" title="Tweaks" onclick="document.getElementById('tweaks-panel').classList.toggle('open')">⚙</button>
+      </div>
+    </header>
 
-    <div class="main-inner post posts-expand">
+    <!-- PAGE CONTENT -->
+    
 
-
-  
-
-
-<div class="post-block">
-  
-  
-
-  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.jpg">
-      <meta itemprop="name" content="DCH">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="DCH's Blog">
-      <meta itemprop="description" content="专注于iOS、RN、大前端和AI Agent技术">
-    </span>
-
-    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
-      <meta itemprop="name" content="Harness Engineering：AI Coding 时代如何做 AI Native Coder | DCH's Blog">
-      <meta itemprop="description" content="探讨 AI Coding 时代的工程方法论演进：从 Vibe Coding 到基于文件对齐，再到 SDD（规范驱动开发）。深入分析如何通过 Harness Engineering 搭建 AI 协作环境，让 AI 从一次性工具进化为团队长期依赖的工程伙伴。包含 OpenSpec、Spec-kit 等实战工具推荐，帮助开发者将 AI 嵌入工作流，成为真正的 AI Native Coder。">
-    </span>
-      <header class="post-header">
-        <h1 class="post-title" itemprop="name headline">
-          Harness Engineering：AI Coding 时代如何做 AI Native Coder
-        </h1>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">发表于</span>
-      
-
-      <time title="创建时间：2026-03-31 17:30:00 / 修改时间：17:30:59" itemprop="dateCreated datePublished" datetime="2026-03-31T17:30:00+08:00">2026-03-31</time>
-    </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">分类于</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/VibeCoding%E6%96%B9%E6%B3%95%E8%AE%BA/" itemprop="url" rel="index"><span itemprop="name">VibeCoding方法论</span></a>
-        </span>
-    </span>
+<div class="post-layout">
 
   
-</div>
-
-            <div class="post-description">探讨 AI Coding 时代的工程方法论演进：从 Vibe Coding 到基于文件对齐，再到 SDD（规范驱动开发）。深入分析如何通过 Harness Engineering 搭建 AI 协作环境，让 AI 从一次性工具进化为团队长期依赖的工程伙伴。包含 OpenSpec、Spec-kit 等实战工具推荐，帮助开发者将 AI 嵌入工作流，成为真正的 AI Native Coder。</div>
+  <article>
+    <header class="post-header">
+        <span class="post-category-chip cat-vibe" style="margin-bottom:12px">VibeCoding方法论</span>
+      <h1 class="post-header-title">Harness Engineering：AI Coding 时代如何做 AI Native Coder</h1>
+      <div class="post-header-meta">
+        <div class="post-header-date">
+          <span style="font-family:var(--mono);font-size:11px;color:var(--text-3)">PUBLISHED</span>
+          2026.03.31
         </div>
-      </header>
+          <div class="post-header-tags">
+              <a href="/tags/AI-Coding/" class="post-tag" style="text-decoration:none">AI Coding</a>
+              <a href="/tags/Harness-Engineering/" class="post-tag" style="text-decoration:none">Harness Engineering</a>
+              <a href="/tags/%E8%BD%AF%E4%BB%B6%E5%B7%A5%E7%A8%8B/" class="post-tag" style="text-decoration:none">软件工程</a>
+              <a href="/tags/%E5%BC%80%E5%8F%91%E6%96%B9%E6%B3%95%E8%AE%BA/" class="post-tag" style="text-decoration:none">开发方法论</a>
+              <a href="/tags/SDD/" class="post-tag" style="text-decoration:none">SDD</a>
+          </div>
+      </div>
+    </header>
 
-    
-    
-    
-    <div class="post-body" itemprop="articleBody"><h2 id="Harness-Engineering：说白了就是给AI搭个环境"><a href="#Harness-Engineering：说白了就是给AI搭个环境" class="headerlink" title="Harness Engineering：说白了就是给AI搭个环境"></a>Harness Engineering：说白了就是给AI搭个环境</h2><p>同样用 Claude 或 GPT，有人让 AI 写了几行代码就卡住了，有人却让 AI 连续工作 6 个小时，交付了一个完整的游戏。</p>
+    <div class="post-body-content">
+      <h2 id="Harness-Engineering：说白了就是给AI搭个环境"><a href="#Harness-Engineering：说白了就是给AI搭个环境" class="headerlink" title="Harness Engineering：说白了就是给AI搭个环境"></a>Harness Engineering：说白了就是给AI搭个环境</h2><p>同样用 Claude 或 GPT，有人让 AI 写了几行代码就卡住了，有人却让 AI 连续工作 6 个小时，交付了一个完整的游戏。</p>
 <p>一个极端的案例来自 OpenAI。3 名工程师，五个月，一行代码都没手写，指挥 Codex Agent 写了 100 万行代码，做出了一个真实的产品。有内测用户在用，有 bug 要修，有功能要加。整个开发流程跑通了。</p>
 <p>差距在哪？2026 年初，OpenAI 和 Anthropic 几乎同时给出了答案：<strong>Harness Engineering</strong>。</p>
 <span id="more"></span>
@@ -504,93 +322,82 @@
     </div>
 
     
-    
-    
-
-    <footer class="post-footer">
-          
-
-<div class="post-copyright">
-<ul>
-  <li class="post-copyright-author">
-      <strong>本文作者： </strong>DCH
-  </li>
-  <li class="post-copyright-link">
-      <strong>本文链接：</strong>
-      <a href="https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/" title="Harness Engineering：AI Coding 时代如何做 AI Native Coder">https://dcheric.github.io/2026/03/31/harness-engineering-ai-native-coder/</a>
-  </li>
-  <li class="post-copyright-license">
-      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
-  </li>
-</ul>
-</div>
-
-          <div class="post-tags">
-              <a href="/tags/AI-Coding/" rel="tag"><i class="fa fa-tag"></i> AI Coding</a>
-              <a href="/tags/Harness-Engineering/" rel="tag"><i class="fa fa-tag"></i> Harness Engineering</a>
-              <a href="/tags/%E8%BD%AF%E4%BB%B6%E5%B7%A5%E7%A8%8B/" rel="tag"><i class="fa fa-tag"></i> 软件工程</a>
-              <a href="/tags/%E5%BC%80%E5%8F%91%E6%96%B9%E6%B3%95%E8%AE%BA/" rel="tag"><i class="fa fa-tag"></i> 开发方法论</a>
-              <a href="/tags/SDD/" rel="tag"><i class="fa fa-tag"></i> SDD</a>
-          </div>
-
-        
-
-          <div class="post-nav">
-            <div class="post-nav-item">
-                <a href="/2026/03/31/ios-binary-reorder-optimization/" rel="prev" title="iOS二进制重排冷启动优化：原理、实操与反思">
-                  <i class="fa fa-angle-left"></i> iOS二进制重排冷启动优化：原理、实操与反思
-                </a>
-            </div>
-            <div class="post-nav-item">
-                <a href="/2026/04/07/ai-engineering-paradigm-evolution/" rel="next" title="AI工程范式的三次演化：Prompt Engineering → Context Engineering → Harness Engineering">
-                  AI工程范式的三次演化：Prompt Engineering → Context Engineering → Harness Engineering <i class="fa fa-angle-right"></i>
-                </a>
-            </div>
-          </div>
-    </footer>
+      <nav class="post-nav">
+          <a href="/2026/04/07/ai-engineering-paradigm-evolution/" class="post-nav-item prev">
+            <span class="post-nav-label">← 上一篇</span>
+            <span class="post-nav-title">AI工程范式的三次演化：Prompt Engineering → Context Engineering → Harness Engineering</span>
+          </a>
+          <a href="/2026/03/31/ios-binary-reorder-optimization/" class="post-nav-item next">
+            <span class="post-nav-label">下一篇 →</span>
+            <span class="post-nav-title">iOS二进制重排冷启动优化：原理、实操与反思</span>
+          </a>
+      </nav>
   </article>
-</div>
-
-
-
-
-
-
-    <div class="comments utterances-container"></div>
-</div>
-  </main>
-
-  <footer class="footer">
-    <div class="footer-inner">
-
-  <div class="copyright">
-    &copy; 
-    <span itemprop="copyrightYear">2026</span>
-    <span class="with-love">
-      <i class="fa fa-heart"></i>
-    </span>
-    <span class="author" itemprop="copyrightHolder">DCH</span>
-  </div>
-
-    </div>
-  </footer>
 
   
-  <div class="toggle sidebar-toggle" role="button">
-    <span class="toggle-line"></span>
-    <span class="toggle-line"></span>
-    <span class="toggle-line"></span>
+  <aside class="toc-wrap">
+    <div class="toc-label">Contents</div>
+    <div class="toc">
+      <ol class="toc-list"><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#Harness-Engineering%EF%BC%9A%E8%AF%B4%E7%99%BD%E4%BA%86%E5%B0%B1%E6%98%AF%E7%BB%99AI%E6%90%AD%E4%B8%AA%E7%8E%AF%E5%A2%83"><span class="toc-list-text">Harness Engineering：说白了就是给AI搭个环境</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E7%9B%B8%E5%85%B3%E8%B5%84%E6%BA%90"><span class="toc-list-text">相关资源</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#Agent-Model-Harness"><span class="toc-list-text">Agent &#x3D; Model + Harness</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E7%AC%AC%E4%B8%80%E9%98%B6%E6%AE%B5%EF%BC%9A%E4%BB%8E%E4%BC%A0%E7%BB%9F%E7%BC%96%E7%A8%8B%E5%88%B0Vibe-Coding"><span class="toc-list-text">第一阶段：从传统编程到Vibe Coding</span></a><ol class="toc-list-child"><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#Vibe-Coding-%E5%AD%A6%E4%B9%A0%E8%B5%84%E6%BA%90"><span class="toc-list-text">Vibe Coding 学习资源</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#Vibe-Coding-%E7%9A%84%E5%B1%80%E9%99%90%E6%80%A7"><span class="toc-list-text">Vibe Coding 的局限性</span></a></li></ol></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E7%AC%AC%E4%BA%8C%E9%98%B6%E6%AE%B5%EF%BC%9A%E6%8E%8C%E6%8F%A1%E8%AE%A9AI%E6%8C%81%E7%BB%AD%E5%AF%B9%E9%BD%90%E7%9A%84%E8%83%BD%E5%8A%9B"><span class="toc-list-text">第二阶段：掌握让AI持续对齐的能力</span></a><ol class="toc-list-child"><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#1-%E8%AE%A9AI%E6%8C%81%E7%BB%AD%E5%AF%B9%E9%BD%90%E4%BD%A0%E7%9A%84%E6%84%8F%E5%9B%BE"><span class="toc-list-text">1. 让AI持续对齐你的意图</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#2-%E8%AE%A9AI%E6%8C%81%E7%BB%AD%E5%AF%B9%E9%BD%90%E4%BD%A0%E7%9A%84%E4%BB%BB%E5%8A%A1"><span class="toc-list-text">2. 让AI持续对齐你的任务</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#3-%E5%9F%BA%E4%BA%8E%E6%96%87%E4%BB%B6%E7%9A%84AI-Coding%E6%96%B9%E6%A1%88"><span class="toc-list-text">3. 基于文件的AI Coding方案</span></a></li></ol></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E7%AC%AC%E4%B8%89%E9%98%B6%E6%AE%B5%EF%BC%9A%E4%BB%8E%E4%B8%AA%E4%BA%BA%E6%8F%90%E6%95%88%E5%88%B0%E5%9B%A2%E9%98%9F%E5%8D%8F%E4%BD%9C%E7%9A%84SDD-Coding"><span class="toc-list-text">第三阶段：从个人提效到团队协作的SDD Coding</span></a><ol class="toc-list-child"><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#1-%E8%BD%AF%E4%BB%B6%E5%BC%80%E5%8F%91%E5%8D%8F%E4%BD%9C%E8%8C%83%E5%BC%8F%E6%BC%94%E5%8F%98"><span class="toc-list-text">1. 软件开发协作范式演变</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#2-%E4%BB%80%E4%B9%88%E6%98%AFSDD-Coding"><span class="toc-list-text">2. 什么是SDD Coding</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#SDD-Coding-%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B"><span class="toc-list-text">SDD Coding 核心流程</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#3-%E8%A7%84%E8%8C%83%E6%98%AFAI-Coding%E6%97%B6%E4%BB%A3%E7%9A%84%E5%9B%A2%E9%98%9F%E8%B5%84%E4%BA%A7"><span class="toc-list-text">3. 规范是AI Coding时代的团队资产</span></a><ol class="toc-list-child"><li class="toc-list-item toc-list-level-4"><a class="toc-list-link" href="#%E4%B8%89%E7%B1%BB%E5%9B%A2%E9%98%9F%E7%9F%A5%E8%AF%86%E8%B5%84%E4%BA%A7"><span class="toc-list-text">三类团队知识资产</span></a></li></ol></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#4-SDD-Coding%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C"><span class="toc-list-text">4. SDD Coding实战经验</span></a><ol class="toc-list-child"><li class="toc-list-item toc-list-level-4"><a class="toc-list-link" href="#%E9%A1%BE%E8%99%91%E4%B8%80%EF%BC%9A%E5%85%88%E5%86%99%E8%A7%84%E8%8C%83%EF%BC%8C%E4%BC%9A%E4%B8%8D%E4%BC%9A%E6%8B%96%E6%85%A2%E5%BC%80%E5%8F%91%E9%80%9F%E5%BA%A6%EF%BC%9F"><span class="toc-list-text">顾虑一：先写规范，会不会拖慢开发速度？</span></a></li><li class="toc-list-item toc-list-level-4"><a class="toc-list-link" href="#%E9%A1%BE%E8%99%91%E4%BA%8C%EF%BC%9A%E5%A6%82%E6%9E%9CAI%E8%AF%AF%E8%A7%A3%E4%BA%86%E8%A7%84%E8%8C%83%E6%80%8E%E4%B9%88%E5%8A%9E%EF%BC%9F"><span class="toc-list-text">顾虑二：如果AI误解了规范怎么办？</span></a></li><li class="toc-list-item toc-list-level-4"><a class="toc-list-link" href="#%E9%A1%BE%E8%99%91%E4%B8%89%EF%BC%9A%E5%A6%82%E4%BD%95%E9%80%89%E5%8F%96%E8%A7%84%E8%8C%83%E6%A8%A1%E7%89%88%E5%B9%B6%E5%BD%A2%E6%88%90%E8%87%AA%E5%B7%B1%E5%9B%A2%E9%98%9F%E7%9A%84%E8%A7%84%E8%8C%83%EF%BC%9F"><span class="toc-list-text">顾虑三：如何选取规范模版并形成自己团队的规范？</span></a></li></ol></li></ol></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E7%AC%AC%E5%9B%9B%E9%98%B6%E6%AE%B5%EF%BC%9A%E6%8A%8AAI%E4%BD%BF%E7%94%A8%E5%86%85%E5%8C%96%E4%B8%BA%E6%9C%AC%E8%83%BD%EF%BC%8C%E6%88%90%E4%B8%BA%E7%9C%9F%E6%AD%A3%E7%9A%84AI-Native-Coder"><span class="toc-list-text">第四阶段：把AI使用内化为本能，成为真正的AI Native Coder</span></a><ol class="toc-list-child"><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#%E6%9C%AA%E6%9D%A5%E5%80%BC%E5%BE%97%E6%8E%A2%E7%B4%A2%E7%9A%84%E6%96%B9%E5%90%91"><span class="toc-list-text">未来值得探索的方向</span></a></li></ol></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E6%80%BB%E7%BB%93"><span class="toc-list-text">总结</span></a></li></ol>
+    </div>
+  </aside>
+
+</div>
+
+
+
+    <!-- FOOTER -->
+    <footer class="footer">
+      <div class="footer-left">
+        © 2026 <a href="https://dcheric.github.io">DCH</a>
+        &nbsp;·&nbsp; Powered by Hexo &nbsp;·&nbsp; Hosted on GitHub Pages
+      </div>
+      <div class="footer-links">
+            <a href="https://github.com/DCHEric" class="footer-link" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://x.com/DCHtigerr" class="footer-link" target="_blank" rel="noopener">X</a>
+      </div>
+    </footer>
   </div>
-  <div class="sidebar-dimmer"></div>
-  <div class="reading-progress-bar"></div>
-  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+</div>
 
-<noscript>
-  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
-</noscript>
-<script class="next-config" data-name="utterances" type="application/json">{"enable":true,"repo":"DCHEric/DCHEric.github.io","issue_term":"pathname","theme":"preferred-color-scheme","label":"comment"}</script>
-<script src="/js/third-party/comments/utterances.js" defer></script>
-<script src="/js/darkmode-toggle.js"></script>
+<!-- TWEAKS PANEL -->
+<div id="tweaks-panel">
+  <div class="tweaks-title">Tweaks</div>
+  <div class="tweak-row">
+    <span class="tweak-label">主题色</span>
+    <select class="tweak-select" id="accentSel">
+      <option value="">Cyan</option>
+      <option value="accent-green">Green</option>
+      <option value="accent-amber">Amber</option>
+      <option value="accent-purple">Purple</option>
+    </select>
+  </div>
+  <div class="tweak-row">
+    <span class="tweak-label">紧凑模式</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="compactToggle">
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>
+  </div>
+  <div class="tweak-row">
+    <span class="tweak-label">扫描线</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="scanlineToggle" checked>
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>
+  </div>
+  <div class="tweak-row">
+    <span class="tweak-label">网格背景</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="gridBgToggle" checked>
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>
+  </div>
+</div>
 
+<script src="/js/main.js"></script>
 </body>
 </html>
