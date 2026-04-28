@@ -1251,6 +1251,8 @@
 <p><strong>经验可沉淀。</strong> 眼镜日志时间戳要用 <code>[UA]</code> 锚点换算、JIRA 状态变更必须先查 transition ID 再执行——这类踩坑才知道的细节，写进 Skill 之后就变成了流程的一部分，不会因为换人处理而重复踩坑。</p>
 <p><strong>质量有保障。</strong> <code>jira-bug-analysis</code> 里的强制人工确认节点，确保 AI 分析结果在发布到 JIRA 之前经过人工审核。这不是对 AI 能力的不信任，而是对”有副作用的操作”的边界划定——AI 负责分析，人负责决定要不要发出去。</p>
 <p>这套体系真正解决的问题，是让 Bug 分析从”依赖个人经验”变成”依赖系统流程”。</p>
+<hr>
+<p>本文涉及的 5 个 Skills 已脱敏开源，可在此参考完整实现：<a href="https://github.com/DCHEric/handle-bug-skills">github.com&#x2F;DCHEric&#x2F;handle-bug-skills</a></p>
 ]]></content>
       <categories>
         <category>VibeCoding方法论</category>
