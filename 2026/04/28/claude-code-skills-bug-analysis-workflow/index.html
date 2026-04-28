@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="从源码和脚本层面拆解 5 个 Skills（jira-bug-analysis、jira-integration、lisa-log-download、lisa-query-feedback、ois-download）是怎么设计的，讲清楚两条 Bug 分析链路（JIRA 内测 / 用户意见反馈）背后的完整技术流程，包括 MCP 协议两层 JSON、BOS STS 临时授权、眼镜日志时间戳换算等细节。">
+  <meta name="keywords" content="">
+  <meta name="author" content="DCH">
+  <title>用 Skills 打通 Bug 分析流水线：5 个 Skill 的设计与串联 | DCH's Blog</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="canonical" href="https://dcheric.github.io/2026/04/28/claude-code-skills-bug-analysis-workflow/">
+<meta name="generator" content="Hexo 7.3.0"></head>
+<body>
+<div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <a href="/" class="sidebar-logo">
+      <div class="logo-prompt">~ /dch/blog</div>
+      <div class="logo-name">DCH<span class="cursor"></span></div>
+      <div class="logo-tagline">
+        <strong>iOS</strong> · <strong>RN</strong> · <strong>大前端</strong> · <strong>AI Agent</strong>
+      </div>
+    </a>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Navigation</div>
+      <a href="/" class="nav-item">
+        <span class="nav-icon">#</span>
+        文章列表
+        <span class="nav-badge">11</span>
+      </a>
+      <a href="/archives" class="nav-item">
+        <span class="nav-icon">≡</span>
+        归档
+      </a>
+      <a href="/about" class="nav-item">
+        <span class="nav-icon">></span>
+        关于我
+      </a>
+
+      <div class="nav-section-label" style="margin-top:24px">Categories</div>
+      <a href="/" class="cat-item" data-filter="all">
+        <span class="cat-dot" style="background:var(--text-2)"></span>
+        全部
+        <span class="cat-count">11</span>
+      </a>
+        <a href="/categories/AI%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" class="cat-item">
+          <span class="cat-dot dot-ai"></span>
+          AI架构设计
+          <span class="cat-count">1</span>
+        </a>
+        <a href="/categories/iOS%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" class="cat-item">
+          <span class="cat-dot dot-ios"></span>
+          iOS架构设计
+          <span class="cat-count">3</span>
+        </a>
+        <a href="/categories/VibeCoding%E6%96%B9%E6%B3%95%E8%AE%BA/" class="cat-item">
+          <span class="cat-dot dot-vibe"></span>
+          VibeCoding方法论
+          <span class="cat-count">3</span>
+        </a>
+        <a href="/categories/iOS/" class="cat-item">
+          <span class="cat-dot dot-ios"></span>
+          iOS
+          <span class="cat-count">3</span>
+        </a>
+        <a href="/categories/%E5%BC%80%E6%BA%90%E9%A1%B9%E7%9B%AE/" class="cat-item">
+          <span class="cat-dot dot-other"></span>
+          开源项目
+          <span class="cat-count">1</span>
+        </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sys-stat">
+        <span class="stat-dot"></span>
+        dcheric.github.io · online
+      </div>
+      <div class="sys-stat">
+        <span style="color:var(--text-3);font-family:var(--mono);font-size:10px">
+          build: hexo@7.3.0
+        </span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <div class="topbar-path">
+        
+  <a href="/" style="color:var(--text-2);transition:color .18s">dch</a>
+  <span class="sep">/</span>
+    <a href="/categories/VibeCoding%E6%96%B9%E6%B3%95%E8%AE%BA/" style="color:var(--text-2);transition:color .18s">VibeCoding方法论</a>
+    <span class="sep">/</span>
+  <span class="current" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">用 Skills 打通 Bug 分析流水线：5 个 Skill 的设计与串联</span>
+
+      </div>
+      <div class="topbar-right">
+        <button class="topbar-btn hamburger" id="hamburger" aria-label="菜单" title="打开菜单">☰</button>
+        <button class="topbar-btn" id="tweaks-toggle-btn" title="Tweaks" onclick="document.getElementById('tweaks-panel').classList.toggle('open')">⚙</button>
+      </div>
+    </header>
+
+    <!-- PAGE CONTENT -->
+    
+
+<div class="post-layout">
+
+  
+  <article>
+    <header class="post-header">
+        <span class="post-category-chip cat-vibe" style="margin-bottom:12px">VibeCoding方法论</span>
+      <h1 class="post-header-title">用 Skills 打通 Bug 分析流水线：5 个 Skill 的设计与串联</h1>
+      <div class="post-header-meta">
+        <div class="post-header-date">
+          <span style="font-family:var(--mono);font-size:11px;color:var(--text-3)">PUBLISHED</span>
+          2026.04.28
+        </div>
+          <div class="post-header-tags">
+              <a href="/tags/AI-Coding/" class="post-tag" style="text-decoration:none">AI Coding</a>
+              <a href="/tags/Claude-Code/" class="post-tag" style="text-decoration:none">Claude Code</a>
+              <a href="/tags/Skills/" class="post-tag" style="text-decoration:none">Skills</a>
+              <a href="/tags/Bug%E5%88%86%E6%9E%90/" class="post-tag" style="text-decoration:none">Bug分析</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/" class="post-tag" style="text-decoration:none">工程实践</a>
+          </div>
+      </div>
+    </header>
+
+    <div class="post-body-content">
+      <h2 id="从一个反直觉的设计说起"><a href="#从一个反直觉的设计说起" class="headerlink" title="从一个反直觉的设计说起"></a>从一个反直觉的设计说起</h2><p>Skill本质上就是一个放在 <code>~/.claude/skills/&lt;name&gt;/SKILL.md</code> 或者<code>~/.codex/skills/&lt;name&gt;/SKILL.md</code> 里的 Markdown 文件。没有特殊 API，没有插件机制，加载后直接注入进 system prompt。</p>
+<p>这听起来挺简陋的。但实际用下来，发现它反而是最合适的抽象方式.因为真正让 AI 变强的不是给它更多工具，而是给它”领域知识”：这个系统的坑在哪、字段含义是什么、什么情况下该停下来问人。这些东西写成自然语言比写成代码更容易维护。</p>
+<p>目前团队内使用的 Bug 分析体系有 5 个相互依赖的 Skills，下面从实现层面把它们拆开讲。</p>
+<span id="more"></span>
+
+<hr>
+<h2 id="两种-Bug-来源，两条完全不同的链路"><a href="#两种-Bug-来源，两条完全不同的链路" class="headerlink" title="两种 Bug 来源，两条完全不同的链路"></a>两种 Bug 来源，两条完全不同的链路</h2><p>先把场景说清楚，因为这决定了整个架构。</p>
+<p><strong>第一种：公司内部测试人员在 JIRA 上提的 Bug。</strong> 测试同学测出问题，手动创建 JIRA Issue，把日志压缩包、截图、视频作为附件上传上去。日志存在 JIRA 附件里，鉴权靠 JIRA 的 Personal Access Token。</p>
+<p><strong>第二种：真实用户通过 App 的意见反馈功能主动上报。</strong> 用户在 App 里点”意见反馈”，App 自动打包当时的系统日志一起上传。这份日志不走 JIRA，走的是另一套内部平台——AISP Community CMS，日志文件存在百度 BOS 上。</p>
+<p>两个来源，两套鉴权，两种定位方式。对应两条链路：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">链路 A（JIRA）：</span><br><span class="line">  测试提 JIRA → 开发者拿 JIRA Key → jira-bug-analysis → jira-integration</span><br><span class="line">  → 下载附件 → 分析</span><br><span class="line"></span><br><span class="line">链路 B（用户意见反馈）：</span><br><span class="line">  用户提交反馈 → 日志上传到 BOS</span><br><span class="line">  → 开发者拿 accountId → lisa-query-feedback → 拿到 fileKey</span><br><span class="line">  → lisa-log-download → ois-download → SIADA MCP → BOS 下载日志 → 分析</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="Skill-1：ois-download-—-有-OIS-鉴权能力的-BOS-下载工具"><a href="#Skill-1：ois-download-—-有-OIS-鉴权能力的-BOS-下载工具" class="headerlink" title="Skill 1：ois-download — 有 OIS 鉴权能力的 BOS 下载工具"></a>Skill 1：ois-download — 有 OIS 鉴权能力的 BOS 下载工具</h2><p>这个 Skill 干的事很直接：给一个 <code>fileKey</code>，把文件从百度 BOS 下回来。日志压缩包、截图、任何存在 BOS 上的文件都能用它下。</p>
+<p>复杂的地方不在下载本身，而在鉴权。BOS 是私有存储，不能直接访问，必须先拿到合法凭证才能下载。这个 Skill 通过 OIS 解决了鉴权问题，所以叫”有 OIS 鉴权能力的 BOS 下载工具”。</p>
+<p>OIS（Object Integrated Storage）是公司内部云服务部门提供的对象存储接入服务，统一封装了百度云、阿里云、火山云等公有云的对象存储，对外提供统一的访问入口。使用方有两条路：一是直接用 OIS 的 SDK；二是调 OIS 的 HTTP 接口拿临时 AK&#x2F;SK（Access Key &#x2F; Secret Key，即临时访问密钥对），再用各家公有云的原生 SDK 操作。</p>
+<p>这个 Skill 走的是第二条路：给你一个 <code>fileKey</code>，通过 OIS 接口拿到访问百度 BOS 的临时凭证，再用百度云原生 SDK 生成预签名 URL 完成下载。正因为用到了百度云 SDK，首次使用前需要先安装依赖：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">pip3 install baidubce</span><br></pre></td></tr></table></figure>
+
+<p>Skill 里的 <code>check_dependencies.sh</code> 会自动检测并安装，但如果网络受限或环境有问题，也可以手动跑这一步。</p>
+<p>看起来很简单，实际上绕了好几道弯。</p>
+<h3 id="为什么不能直接-curl"><a href="#为什么不能直接-curl" class="headerlink" title="为什么不能直接 curl"></a>为什么不能直接 curl</h3><p>日志文件存在百度 BOS 的私有 bucket 里，直接访问需要鉴权。正常的做法是维护一个长期 Access Key，但这有两个问题：一是 Key 一旦泄露影响面很大；二是不同角色的人对文件的访问权限应该不同，用一把长期 Key 很难做细粒度控制。</p>
+<p>所以这里走 OIS 的 STS 临时授权方案：不持有任何长期凭证，每次下载时现去 OIS 申请一组只有 3600 秒有效期的临时 AK&#x2F;SK + SecurityToken，用它生成一个带签名的一次性下载 URL，下完即过期。整个过程 Skill 本地不存任何 secret，权限控制交给 OIS 统一管理。</p>
+<p>这套流程背后还有一个好处：因为走了 OIS 这层统一入口，底层换成阿里云或火山云对上层完全透明，Skill 代码不需要改。</p>
+<h3 id="SIADA-MCP-的协议细节"><a href="#SIADA-MCP-的协议细节" class="headerlink" title="SIADA MCP 的协议细节"></a>SIADA MCP 的协议细节</h3><p>OIS 申请 STS 凭证的接口不是普通的 REST API，而是通过 SIADA MCP 服务暴露的——这是公司内部 AI 平台统一对外提供工具调用的方式，接口协议遵循 MCP（Model Context Protocol）标准。所以 Skill 脚本里不是简单地 <code>curl</code> 一个 REST 接口，而是要按 MCP 协议走完整的会话流程。</p>
+<p>具体有一个容易踩坑的地方：每次调用前必须先发一个 <code>initialize</code> 握手请求，然后才能发 <code>tools/call</code>，两个请求打到同一个 endpoint。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># Step 1: initialize（像 WebSocket 握手一样）</span></span><br><span class="line">curl -X POST <span class="string">&quot;https://siada.lixiang.com/mcp&quot;</span> \</span><br><span class="line">  -H <span class="string">&quot;Authorization: Bearer <span class="variable">$SIADA_API_KEY</span>&quot;</span> \</span><br><span class="line">  -d <span class="string">&#x27;&#123;</span></span><br><span class="line"><span class="string">    &quot;jsonrpc&quot;: &quot;2.0&quot;, &quot;id&quot;: 1, &quot;method&quot;: &quot;initialize&quot;,</span></span><br><span class="line"><span class="string">    &quot;params&quot;: &#123;</span></span><br><span class="line"><span class="string">      &quot;protocolVersion&quot;: &quot;2024-11-05&quot;,</span></span><br><span class="line"><span class="string">      &quot;clientInfo&quot;: &#123;&quot;name&quot;: &quot;openclaw&quot;, &quot;version&quot;: &quot;1.0.0&quot;&#125;</span></span><br><span class="line"><span class="string">    &#125;</span></span><br><span class="line"><span class="string">  &#125;&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># Step 2: 调 getOisAuth 工具</span></span><br><span class="line">curl -X POST <span class="string">&quot;https://siada.lixiang.com/mcp&quot;</span> \</span><br><span class="line">  -H <span class="string">&quot;Authorization: Bearer <span class="variable">$SIADA_API_KEY</span>&quot;</span> \</span><br><span class="line">  -d <span class="string">&#x27;&#123;</span></span><br><span class="line"><span class="string">    &quot;jsonrpc&quot;: &quot;2.0&quot;, &quot;id&quot;: 2, &quot;method&quot;: &quot;tools/call&quot;,</span></span><br><span class="line"><span class="string">    &quot;params&quot;: &#123;</span></span><br><span class="line"><span class="string">      &quot;name&quot;: &quot;1815568242626891830&quot;,</span></span><br><span class="line"><span class="string">      &quot;arguments&quot;: &#123;</span></span><br><span class="line"><span class="string">        &quot;appId&quot;: &quot;com.lixiang.crs.question.file.limate&quot;,</span></span><br><span class="line"><span class="string">        &quot;fileKey&quot;: &quot;&lt;your-fileKey&gt;&quot;,</span></span><br><span class="line"><span class="string">        &quot;identify&quot;: &quot;remote-control&quot;,</span></span><br><span class="line"><span class="string">        &quot;durationSeconds&quot;: 3600</span></span><br><span class="line"><span class="string">      &#125;</span></span><br><span class="line"><span class="string">    &#125;</span></span><br><span class="line"><span class="string">  &#125;&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<p>返回的 JSON 是<strong>两层嵌套</strong>的：外层是 MCP 协议层（<code>result.content[0].text</code>），里面才是真正的业务 JSON。解析时要先取 <code>.result.content[0].text</code>，再对这个字符串做第二次 <code>jq</code> 解析，才能拿到 <code>accessKeyId</code>、<code>accessKeySecret</code>、<code>securityToken</code>。</p>
+<p>拿到 STS 凭证之后，交给 Python 的 <code>baidubce</code> SDK 生成预签名 URL。这里有个隐蔽的坑：<code>baidubce</code> 的 <code>generate_pre_signed_url</code> 返回的是 <code>bytes</code> 类型，不是 <code>str</code>，如果直接打印会得到 <code>b&#39;https://...&#39;</code> 这样带前缀的字符串。<code>generate_url.py</code> 里做了显式的 decode：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">url = bos_client.generate_pre_signed_url(bucket_name=..., key=..., expiration_in_seconds=-<span class="number">1</span>)</span><br><span class="line"><span class="keyword">if</span> <span class="built_in">isinstance</span>(url, <span class="built_in">bytes</span>):</span><br><span class="line">    url = url.decode(<span class="string">&#x27;utf-8&#x27;</span>)</span><br><span class="line"><span class="built_in">print</span>(url)</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="Skill-2：lisa-query-feedback-—-从用户-accountId-找到日志的-fileKey"><a href="#Skill-2：lisa-query-feedback-—-从用户-accountId-找到日志的-fileKey" class="headerlink" title="Skill 2：lisa-query-feedback — 从用户 accountId 找到日志的 fileKey"></a>Skill 2：lisa-query-feedback — 从用户 accountId 找到日志的 fileKey</h2><p>这个 Skill 干的事只有一件：给一个用户 <code>accountId</code>，查出他在 App 里提交的所有意见反馈记录，每条记录里有 <code>fileKey</code>，指向 BOS 上对应的日志文件。</p>
+<p>为什么需要单独一个 Skill 做这件事？因为用户上报的日志不在 JIRA 里，而是存在公司内部的意见反馈平台。开发者要分析用户反馈的问题，必须先来这里找到日志的 <code>fileKey</code>，才能交给 <code>lisa-log-download</code> 去下载。没有这一步，根本不知道日志在哪。</p>
+<p>运作方式很简单：给一个 <code>accountId</code>，Skill 调内网的意见反馈平台接口，拉出这个用户提交的所有反馈记录，整理成表格输出——每条记录包含提交时间、App 版本、反馈内容摘要，以及最关键的 <code>fileKey</code>。拿到 <code>fileKey</code> 之后直接交给下一个 Skill 去下载日志。</p>
+<p>具体流程：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">1. 开发者提供用户 accountId（从 JIRA 描述、用户投诉记录等渠道获取）</span><br><span class="line">   ↓</span><br><span class="line">2. Skill 请求内网意见反馈平台接口（需要内网或 VPN）</span><br><span class="line">   ↓</span><br><span class="line">3. 输出该用户的反馈记录表格：</span><br><span class="line">   提交时间 | App 版本 | 系统 | 反馈内容摘要 | 是否有日志附件</span><br><span class="line">   ↓</span><br><span class="line">4. 单独列出所有携带日志的条目及其 fileKey</span><br><span class="line">   ↓</span><br><span class="line">5. 把 fileKey 交给 lisa-log-download 下载日志</span><br></pre></td></tr></table></figure>
+
+<p>值得一提的是，眼镜固件日志也走这条路。用户反馈眼镜问题时，眼镜日志同样通过 Lisa App 上传到意见反馈平台，查询方式和手机日志完全一致，不需要特殊处理。</p>
+<hr>
+<h2 id="Skill-3：lisa-log-download-—-把日志下回来、解压好，准备供分析"><a href="#Skill-3：lisa-log-download-—-把日志下回来、解压好，准备供分析" class="headerlink" title="Skill 3：lisa-log-download — 把日志下回来、解压好，准备供分析"></a>Skill 3：lisa-log-download — 把日志下回来、解压好，准备供分析</h2><p>这个 Skill 的定位是：拿到 <code>fileKey</code> 之后，把 BOS 上的日志文件下回来、解压、整理成可以直接读的目录结构。它是 <code>ois-download</code> 的上层封装，补充了两个 <code>ois-download</code> 没有的能力：一是”不知道 fileKey 时先查”，二是下载后自动解压处理。</p>
+<p>为什么要单独抽这一层？因为实际使用中经常遇到”只知道用户 accountId，不知道具体哪个日志文件”的情况——<code>lisa-query-feedback</code> 拿到的是反馈记录，<code>ois-download</code> 只负责下载，中间的”查日志记录拿 fileKey”这步需要有人做，就是这个 Skill。</p>
+<p><strong>模式一：已知 fileKey，直接下载。</strong> 调 <code>download-by-ois.sh</code>，走 SIADA MCP → BOS 链路把文件拉回来，自动解压。</p>
+<p><strong>模式二：不知道 fileKey，先查。</strong> 调 <code>query-logs.sh</code>，走另一个 SIADA MCP 工具（tool ID <code>1823985084370276360</code>，用 entityCode <code>com.lixiang.crs.question.file.limate</code> 做过滤），拿到日志记录列表，再从里面取 fileKey 去下载。</p>
+<p>两个 SIADA MCP 工具 ID 不一样，但协议是一样的：initialize → tools&#x2F;call → 解析两层 JSON。</p>
+<h3 id="解压后的目录结构"><a href="#解压后的目录结构" class="headerlink" title="解压后的目录结构"></a>解压后的目录结构</h3><p>iOS App 日志解压后大概是这样：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">extracted_UUID_xxx.zip.z/</span><br><span class="line">  logs/</span><br><span class="line">    2026-03-27 10:44:23:732.log    # 主日志（时间戳精确到毫秒）</span><br><span class="line">    rtc/logs/agora/                # Agora RTC SDK 的日志</span><br><span class="line">    bstLog/                        # BST 视频/图像处理 SDK 的日志</span><br></pre></td></tr></table></figure>
+
+<p>Android 日志和 iOS 日志目录结构不一样，对照源码的路径也不一样：iOS 对应 <code>lisa-ios/</code>，Android 对应 <code>lisa-android/</code>，眼镜日志对应 <code>embedded-gtk/embedded-gtk/</code>。涉及 BLE 连接、WiFi 传输、音频流的日志需要同时查 <code>sslink-sdk/</code>，因为这是 iOS 和 Android 共用的通信库。</p>
+<h3 id="眼镜日志的时间戳换算"><a href="#眼镜日志的时间戳换算" class="headerlink" title="眼镜日志的时间戳换算"></a>眼镜日志的时间戳换算</h3><p>眼镜固件日志（<code>sys_log/glasses_*.log</code>）有个特殊之处：日志里的时间是设备启动后的毫秒数，不是 UTC：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">1/  868/I/NONE  /   4 | HARDWARE STATS: Started with interval 10000 ms</span><br></pre></td></tr></table></figure>
+
+<p>第一个字段是序号，第二个 <code>868</code> 是启动后 868 毫秒。这个时间没法直接和手机日志对齐。</p>
+<p>但日志里会定期出现 <code>[UA]</code> 锚点行，携带真实的 UTC 时间：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">0310/  10383/I/main | [UA] 2026-03-28 00:54:20 [FIRMWARE_VERSION] LIG_b8da0718@...</span><br></pre></td></tr></table></figure>
+
+<p>有了这个锚点就能反推任意一行的绝对时间：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">absolute_time = anchor_utc + (line_ms - anchor_ms) / 1000</span><br></pre></td></tr></table></figure>
+
+<p>比如一行日志在 <code>868ms</code>，最近的锚点是 <code>10383ms → 00:54:20</code>，那这行的时间就是 <code>00:54:20 - (10383 - 868) / 1000 = 00:54:10.485</code>。</p>
+<p>分析跨端 Bug 时（App + 眼镜同时出问题），把两份日志的时间对齐是第一步，缺了这个换算公式就没法做。</p>
+<h3 id="下载文件的清理规则"><a href="#下载文件的清理规则" class="headerlink" title="下载文件的清理规则"></a>下载文件的清理规则</h3><p>日志文件默认落到 <code>/tmp/lisa_logs/</code>，解压成功后原始的 <code>.zip.z</code> 文件立刻删掉，解压目录保留 7 天，超过 7 天的目录在下次下载时顺手清掉：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">find <span class="string">&quot;<span class="variable">$OUTPUT_DIR</span>&quot;</span> -mindepth 1 -maxdepth 1 -mtime +7 -<span class="built_in">exec</span> <span class="built_in">rm</span> -rf &#123;&#125; +</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="Skill-4：jira-integration-—-JIRA-操作的统一基础层"><a href="#Skill-4：jira-integration-—-JIRA-操作的统一基础层" class="headerlink" title="Skill 4：jira-integration — JIRA 操作的统一基础层"></a>Skill 4：jira-integration — JIRA 操作的统一基础层</h2><p>这个 Skill 是其他所有需要访问 JIRA 的 Skill 的共同底座：统一管理凭证、提供标准化的 API 封装，让上层 Skill 直接拿来用，不用各自处理鉴权细节。</p>
+<p>为什么要单独抽出来？如果每个 Skill 各自维护 JIRA 凭证和 API 调用逻辑，凭证分散在多处、API 用法也可能不一致。集中在一个地方，凭证只存 <code>~/.claude/settings.json</code> 一份，API 用法有统一的参考模板，改一处全部生效。</p>
+<p>凭证放在 <code>~/.claude/settings.json</code>：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;plugins&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;jira-integration&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;baseUrl&quot;</span><span class="punctuation">:</span> <span class="string">&quot;https://jira.your-company.com&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;username&quot;</span><span class="punctuation">:</span> <span class="string">&quot;your-username&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;personalAccessToken&quot;</span><span class="punctuation">:</span> <span class="string">&quot;your-personal-access-token&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>Skill 里提供了一个 Python <code>JiraClient</code> 的完整实现，Claude 在需要访问 JIRA 时直接按这个模板写脚本，不用每次重新处理鉴权逻辑。</p>
+<p>用 PAT（Personal Access Token）而不是用户名密码，原因是现代 JIRA 推荐 Bearer Token 方式，Basic Auth 属于 legacy 方案，部分实例已经不支持。</p>
+<h3 id="状态变更的两步走"><a href="#状态变更的两步走" class="headerlink" title="状态变更的两步走"></a>状态变更的两步走</h3><p>JIRA 的状态迁移不能直接指定目标状态名，必须先拿到可用的 transition ID，再执行 transition。Skill 里强制要求两步走：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 第一步：查当前 issue 可以做哪些状态变更</span></span><br><span class="line">transitions = jira.get_transitions(<span class="string">&quot;LIG-6553&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 第二步：用对应的 transition ID 变更状态</span></span><br><span class="line">jira.transition_issue(<span class="string">&quot;LIG-6553&quot;</span>, transition_id=<span class="string">&quot;31&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>直接猜 transition ID 会踩坑，因为不同项目、不同工作流的 ID 完全不同。</p>
+<hr>
+<h2 id="Skill-5：jira-bug-analysis-—-整条流水线的唯一入口"><a href="#Skill-5：jira-bug-analysis-—-整条流水线的唯一入口" class="headerlink" title="Skill 5：jira-bug-analysis — 整条流水线的唯一入口"></a>Skill 5：jira-bug-analysis — 整条流水线的唯一入口</h2><p>这是整个体系的编排层，也是开发者唯一需要直接打交道的 Skill：给一个 JIRA Key，它把前面所有 Skill 串起来，从拉取 Bug 信息、下载附件、分析日志，到生成结构化报告，全部自动完成。</p>
+<p>为什么需要这一层？前面四个 Skill 各自解决一个具体问题，但 Bug 分析是一个有顺序依赖的多步流程，光有零件不够，还需要一个知道”先做什么、后做什么、什么时候该停下来问人”的编排者。这个 Skill 就是那个编排者。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">分析 LIG-6553</span><br></pre></td></tr></table></figure>
+
+<h3 id="完整执行流程"><a href="#完整执行流程" class="headerlink" title="完整执行流程"></a>完整执行流程</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line">1. [jira-integration] 拉取 issue 详情</span><br><span class="line">     → 标题、状态、指派人、描述、occurrenceTime、附件列表</span><br><span class="line"></span><br><span class="line">2. 下载全部附件</span><br><span class="line">     → curl -H &quot;Authorization: Bearer &lt;PAT&gt;&quot; &lt;attachment.content URL&gt;</span><br><span class="line"></span><br><span class="line">3. 识别附件类型</span><br><span class="line">     Android/...feedback-log.zip / .zip.z  → Android App 日志</span><br><span class="line">     ios/...*.zip / .zip.z                 → iOS App 日志</span><br><span class="line">     文件名含 glasses / glass_log           → 眼镜固件日志</span><br><span class="line">     *.png / *.jpg / *.jpeg                → 截图（Claude vision 直接读）</span><br><span class="line">     *.mp4 / *.mov / *.webm               → 视频（video-frames skill 提取关键帧）</span><br><span class="line"></span><br><span class="line">4. 确定 Bug 时间窗口</span><br><span class="line">     优先级：截图/视频上的系统时间 &gt; occurrenceTime（用户填的，可能有偏差）&gt; 日志起止时间</span><br><span class="line">     窗口 = [参考时间 - 10min, 参考时间 + 5min]</span><br><span class="line">     如果日志起止时间比窗口早/晚，要声明日志缺口</span><br><span class="line"></span><br><span class="line">5. 时间锚定根因分析</span><br><span class="line">     → 列出窗口内所有异常事件</span><br><span class="line">     → 逐一验证时间重合度</span><br><span class="line">     → 排除法收敛根因</span><br><span class="line"></span><br><span class="line">6. 生成结构化报告</span><br><span class="line">     → ID 格式：RPT-&#123;YYYYMMDD&#125;-&#123;HHMMSS&#125;-&#123;jira-key&#125;</span><br><span class="line">     → 归档到 /workspace/reports/jira-bugs/</span><br><span class="line">     → 更新 /workspace/reports/INDEX.md</span><br><span class="line"></span><br><span class="line">7. ⚠️ 暂停，把报告呈给用户确认</span><br><span class="line"></span><br><span class="line">8. 用户明确说&quot;评论到 JIRA&quot; → 发 JIRA 评论</span><br></pre></td></tr></table></figure>
+
+<h3 id="时间锚定这件事为什么重要"><a href="#时间锚定这件事为什么重要" class="headerlink" title="时间锚定这件事为什么重要"></a>时间锚定这件事为什么重要</h3><p>一份 Bug 日志里可能有几十条异常信号，如果每条都去追查，既慢又容易跑偏。”时间锚定根因分析法”的核心动作只有一个：<strong>排除掉窗口外的异常</strong>。</p>
+<p>每个候选根因用一张表来做决策：</p>
+<table>
+<thead>
+<tr>
+<th>异常信号</th>
+<th>最后发生时间</th>
+<th>Bug 窗口内是否持续</th>
+<th>能否解释现象</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>蓝牙断连</td>
+<td>14:23:17</td>
+<td>✅</td>
+<td>✅</td>
+<td>候选根因</td>
+</tr>
+<tr>
+<td>内存告警</td>
+<td>14:10:05</td>
+<td>❌</td>
+<td>✅</td>
+<td>排除（时间不重合）</td>
+</tr>
+<tr>
+<td>RTC 超时</td>
+<td>14:24:01</td>
+<td>✅</td>
+<td>❌</td>
+<td>排除（现象不匹配）</td>
+</tr>
+</tbody></table>
+<p>内存告警在 14:10 就结束了，问题发生在 14:23 窗口内，时间不重合，直接排除。不管它看起来多”可疑”。这个过滤步骤能把需要深查的候选项从几十个压到 2-3 个。</p>
+<p>截图为什么优先于 occurrenceTime？因为截图上的系统时间是系统自动打的，用户填的 occurrenceTime 可能早、可能晚，尤其是用户过了几小时才提交反馈的时候，偏差可以到 ±30 分钟。</p>
+<h3 id="报告质量自查清单"><a href="#报告质量自查清单" class="headerlink" title="报告质量自查清单"></a>报告质量自查清单</h3><p>报告生成完有一个强制 checklist，不满足不能发 JIRA：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">- [ ] 已做时间锚定，窗口已确定</span><br><span class="line">- [ ] 每个候选根因有日志原文作证据</span><br><span class="line">- [ ] P0/P1 结论已查源码，给出文件路径 + 代码片段</span><br><span class="line">- [ ] 已排除时间不重合的异常信号</span><br><span class="line">- [ ] 日志缺口已声明（如有）</span><br></pre></td></tr></table></figure>
+
+<p>最后一条”日志缺口”是说：如果 Bug 发生时间窗口里有一段没有日志覆盖，必须在报告里明确写出来，不能假装那段时间发生了什么。</p>
+<h3 id="发评论的强制人工确认"><a href="#发评论的强制人工确认" class="headerlink" title="发评论的强制人工确认"></a>发评论的强制人工确认</h3><p>Skill 里有三条硬约束：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">❌ 分析完直接发 JIRA 评论</span><br><span class="line">❌ 先发再发 Update 修正</span><br><span class="line">❌ 用户未明确说&quot;评论到 JIRA&quot;就自动发布</span><br></pre></td></tr></table></figure>
+
+<p>默认只归档本地，不发评论。这不是保守设计，而是必要的：AI 分析置信度不是 100%，特别是日志不完整、时间戳有歧义的情况下，让人看一眼确认再发，是防止把半成品分析暴露给其他团队的质量关卡。</p>
+<hr>
+<h2 id="整体架构回顾"><a href="#整体架构回顾" class="headerlink" title="整体架构回顾"></a>整体架构回顾</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">┌───────────────────────────────────────────────────────────┐</span><br><span class="line">│                    jira-bug-analysis                      │  编排层</span><br><span class="line">└───────────────────────────┬───────────────────────────────┘</span><br><span class="line">                            │</span><br><span class="line">           ┌────────────────┴─────────────────┐</span><br><span class="line">           ▼                                  ▼</span><br><span class="line">┌──────────────────┐              ┌───────────────────────┐</span><br><span class="line">│  jira-integration│              │   lisa-log-download   │  数据访问层</span><br><span class="line">│  (JIRA REST API) │              │   (SIADA MCP 查询)    │</span><br><span class="line">└──────────────────┘              └───────────┬───────────┘</span><br><span class="line">                                              │</span><br><span class="line">                                  ┌───────────▼───────────┐</span><br><span class="line">                                  │      ois-download      │  基础层</span><br><span class="line">                                  │  (BOS STS 临时授权)    │</span><br><span class="line">                                  └────────────────────────┘</span><br><span class="line"></span><br><span class="line">用户意见反馈链路：</span><br><span class="line">┌──────────────────────┐</span><br><span class="line">│  lisa-query-feedback │ → 拿到 fileKey → lisa-log-download → ois-download</span><br><span class="line">│  (AISP Community CMS)│</span><br><span class="line">└──────────────────────┘</span><br></pre></td></tr></table></figure>
+
+<p>两条链路的核心差异：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>链路 A（JIRA 内测）</th>
+<th>链路 B（用户意见反馈）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Bug 来源</td>
+<td>内部测试同学手动提交</td>
+<td>真实用户 App 内上报</td>
+</tr>
+<tr>
+<td>日志存放</td>
+<td>JIRA 附件</td>
+<td>百度 BOS</td>
+</tr>
+<tr>
+<td>鉴权方式</td>
+<td>JIRA PAT（长期凭证）</td>
+<td>SIADA MCP STS（临时，3600s）</td>
+</tr>
+<tr>
+<td>入口</td>
+<td>JIRA Key（LIG-xxxx）</td>
+<td>用户 accountId</td>
+</tr>
+<tr>
+<td>核心 Skill</td>
+<td>jira-bug-analysis</td>
+<td>lisa-query-feedback → lisa-log-download</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="真实效果"><a href="#真实效果" class="headerlink" title="真实效果"></a>真实效果</h2><h3 id="分析测试在Jira上提出的bug"><a href="#分析测试在Jira上提出的bug" class="headerlink" title="分析测试在Jira上提出的bug"></a>分析测试在Jira上提出的bug</h3><ul>
+<li>直接把jira issue id给到AI，会先规划拆分任务<br><img src="/images/claude-code-skills/jira-bug-task-planning.png" alt="AI规划分析任务"></li>
+<li>首先会识别到需要使用jira-bug-analysis这个skill<br><img src="/images/claude-code-skills/jira-skill-identified.png" alt="识别jira-bug-analysis skill"></li>
+<li>接着会读取配置中的jira中的认证信息并获取bug信息<br><img src="/images/claude-code-skills/jira-auth-and-fetch-bug.png" alt="读取JIRA认证并获取Bug信息"></li>
+<li>接着会下载附件信息（日志文件、截图等），并解压<br><img src="/images/claude-code-skills/jira-download-attachments.png" alt="下载并解压附件"></li>
+<li>拿到bug的所有信息后，开始分析<br><img src="/images/claude-code-skills/jira-analysis-in-progress.png" alt="开始分析日志"></li>
+<li>分析完后会形成分析报告存储在本地<br><img src="/images/claude-code-skills/jira-report-saved-locally.png" alt="分析报告保存到本地"></li>
+<li>用户进行选择<br><img src="/images/claude-code-skills/jira-user-confirm.png" alt="用户确认是否发布报告"><br>这是拿之前解决的一个bug进行测试，分析的结果准确无误！</li>
+</ul>
+<h3 id="分析用户在APP提交的日志反馈"><a href="#分析用户在APP提交的日志反馈" class="headerlink" title="分析用户在APP提交的日志反馈"></a>分析用户在APP提交的日志反馈</h3><ul>
+<li>请求查询指定用户id的反馈问题，会自动使用lisa-query-feedback这个skill，并按照skill内容进行操作<br><img src="/images/claude-code-skills/feedback-query-skill-triggered.png" alt="自动触发lisa-query-feedback skill"></li>
+<li>给出用户反馈的问题<br><img src="/images/claude-code-skills/feedback-results-listed.png" alt="列出用户反馈记录"></li>
+<li>要求下载日志进行分析，自动调用ois-download这个skill<br><img src="/images/claude-code-skills/feedback-ois-download-skill-triggered.png" alt="自动触发ois-download skill"></li>
+<li>先检查BOS的依赖是否符合，自动解决<br><img src="/images/claude-code-skills/feedback-bos-deps-check.png" alt="检查并安装BOS依赖"></li>
+<li>然后进行鉴权处理<br><img src="/images/claude-code-skills/feedback-ois-auth.png" alt="OIS STS临时鉴权"></li>
+<li>预签名 URL 生成成功，下载日志进行解压<br><img src="/images/claude-code-skills/feedback-presigned-url-generated.png" alt="预签名URL生成并下载解压"></li>
+<li>分析日志<br><img src="/images/claude-code-skills/feedback-log-analysis.png" alt="分析用户反馈日志"></li>
+<li>最终给出分析报告<br><img src="/images/claude-code-skills/feedback-analysis-report.png" alt="用户反馈分析报告"></li>
+</ul>
+<h2 id="Skills-对-Bug-分析流程的意义"><a href="#Skills-对-Bug-分析流程的意义" class="headerlink" title="Skills 对 Bug 分析流程的意义"></a>Skills 对 Bug 分析流程的意义</h2><p>Bug 分析本质上是一个知识密集型的工作：要知道日志在哪、怎么鉴权拿到、不同平台的字段有什么坑、时间怎么对齐、根因怎么排查。以前这些知识分散在不同人脑子里，换个人来处理就得重新摸索一遍。</p>
+<p>Skills 做的事，是把这些知识从个人脑子里搬到系统里。</p>
+<p><strong>流程可复用。</strong> 五个 Skills 组合成两条固定链路，任何人说出一个 JIRA Key 或者 accountId，就能跑起来完整的分析流程，不需要了解背后每一步怎么做。以前需要熟悉整套系统才能独立处理的工作，现在降低到了”知道入口”就够。</p>
+<p><strong>经验可沉淀。</strong> 眼镜日志时间戳要用 <code>[UA]</code> 锚点换算、JIRA 状态变更必须先查 transition ID 再执行——这类踩坑才知道的细节，写进 Skill 之后就变成了流程的一部分，不会因为换人处理而重复踩坑。</p>
+<p><strong>质量有保障。</strong> <code>jira-bug-analysis</code> 里的强制人工确认节点，确保 AI 分析结果在发布到 JIRA 之前经过人工审核。这不是对 AI 能力的不信任，而是对”有副作用的操作”的边界划定——AI 负责分析，人负责决定要不要发出去。</p>
+<p>这套体系真正解决的问题，是让 Bug 分析从”依赖个人经验”变成”依赖系统流程”。</p>
+
+    </div>
+
+    
+      <nav class="post-nav">
+          <div></div>
+          <a href="/2026/04/18/h5-webview-white-screen-optimization/" class="post-nav-item next">
+            <span class="post-nav-label">下一篇 →</span>
+            <span class="post-nav-title">H5详情页加载白屏优化：WKWebView渲染原理与实践</span>
+          </a>
+      </nav>
+  </article>
+
+  
+  <aside class="toc-wrap">
+    <div class="toc-label">Contents</div>
+    <div class="toc">
+      <ol class="toc-list"><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E4%BB%8E%E4%B8%80%E4%B8%AA%E5%8F%8D%E7%9B%B4%E8%A7%89%E7%9A%84%E8%AE%BE%E8%AE%A1%E8%AF%B4%E8%B5%B7"><span class="toc-list-text">从一个反直觉的设计说起</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E4%B8%A4%E7%A7%8D-Bug-%E6%9D%A5%E6%BA%90%EF%BC%8C%E4%B8%A4%E6%9D%A1%E5%AE%8C%E5%85%A8%E4%B8%8D%E5%90%8C%E7%9A%84%E9%93%BE%E8%B7%AF"><span class="toc-list-text">两种 Bug 来源，两条完全不同的链路</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#Skill-1%EF%BC%9Aois-download-%E2%80%94-%E6%9C%89-OIS-%E9%89%B4%E6%9D%83%E8%83%BD%E5%8A%9B%E7%9A%84-BOS-%E4%B8%8B%E8%BD%BD%E5%B7%A5%E5%85%B7"><span class="toc-list-text">Skill 1：ois-download — 有 OIS 鉴权能力的 BOS 下载工具</span></a><ol class="toc-list-child"><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E8%83%BD%E7%9B%B4%E6%8E%A5-curl"><span class="toc-list-text">为什么不能直接 curl</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#SIADA-MCP-%E7%9A%84%E5%8D%8F%E8%AE%AE%E7%BB%86%E8%8A%82"><span class="toc-list-text">SIADA MCP 的协议细节</span></a></li></ol></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#Skill-2%EF%BC%9Alisa-query-feedback-%E2%80%94-%E4%BB%8E%E7%94%A8%E6%88%B7-accountId-%E6%89%BE%E5%88%B0%E6%97%A5%E5%BF%97%E7%9A%84-fileKey"><span class="toc-list-text">Skill 2：lisa-query-feedback — 从用户 accountId 找到日志的 fileKey</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#Skill-3%EF%BC%9Alisa-log-download-%E2%80%94-%E6%8A%8A%E6%97%A5%E5%BF%97%E4%B8%8B%E5%9B%9E%E6%9D%A5%E3%80%81%E8%A7%A3%E5%8E%8B%E5%A5%BD%EF%BC%8C%E5%87%86%E5%A4%87%E4%BE%9B%E5%88%86%E6%9E%90"><span class="toc-list-text">Skill 3：lisa-log-download — 把日志下回来、解压好，准备供分析</span></a><ol class="toc-list-child"><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#%E8%A7%A3%E5%8E%8B%E5%90%8E%E7%9A%84%E7%9B%AE%E5%BD%95%E7%BB%93%E6%9E%84"><span class="toc-list-text">解压后的目录结构</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#%E7%9C%BC%E9%95%9C%E6%97%A5%E5%BF%97%E7%9A%84%E6%97%B6%E9%97%B4%E6%88%B3%E6%8D%A2%E7%AE%97"><span class="toc-list-text">眼镜日志的时间戳换算</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#%E4%B8%8B%E8%BD%BD%E6%96%87%E4%BB%B6%E7%9A%84%E6%B8%85%E7%90%86%E8%A7%84%E5%88%99"><span class="toc-list-text">下载文件的清理规则</span></a></li></ol></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#Skill-4%EF%BC%9Ajira-integration-%E2%80%94-JIRA-%E6%93%8D%E4%BD%9C%E7%9A%84%E7%BB%9F%E4%B8%80%E5%9F%BA%E7%A1%80%E5%B1%82"><span class="toc-list-text">Skill 4：jira-integration — JIRA 操作的统一基础层</span></a><ol class="toc-list-child"><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#%E7%8A%B6%E6%80%81%E5%8F%98%E6%9B%B4%E7%9A%84%E4%B8%A4%E6%AD%A5%E8%B5%B0"><span class="toc-list-text">状态变更的两步走</span></a></li></ol></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#Skill-5%EF%BC%9Ajira-bug-analysis-%E2%80%94-%E6%95%B4%E6%9D%A1%E6%B5%81%E6%B0%B4%E7%BA%BF%E7%9A%84%E5%94%AF%E4%B8%80%E5%85%A5%E5%8F%A3"><span class="toc-list-text">Skill 5：jira-bug-analysis — 整条流水线的唯一入口</span></a><ol class="toc-list-child"><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#%E5%AE%8C%E6%95%B4%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B"><span class="toc-list-text">完整执行流程</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#%E6%97%B6%E9%97%B4%E9%94%9A%E5%AE%9A%E8%BF%99%E4%BB%B6%E4%BA%8B%E4%B8%BA%E4%BB%80%E4%B9%88%E9%87%8D%E8%A6%81"><span class="toc-list-text">时间锚定这件事为什么重要</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#%E6%8A%A5%E5%91%8A%E8%B4%A8%E9%87%8F%E8%87%AA%E6%9F%A5%E6%B8%85%E5%8D%95"><span class="toc-list-text">报告质量自查清单</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#%E5%8F%91%E8%AF%84%E8%AE%BA%E7%9A%84%E5%BC%BA%E5%88%B6%E4%BA%BA%E5%B7%A5%E7%A1%AE%E8%AE%A4"><span class="toc-list-text">发评论的强制人工确认</span></a></li></ol></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84%E5%9B%9E%E9%A1%BE"><span class="toc-list-text">整体架构回顾</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E7%9C%9F%E5%AE%9E%E6%95%88%E6%9E%9C"><span class="toc-list-text">真实效果</span></a><ol class="toc-list-child"><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#%E5%88%86%E6%9E%90%E6%B5%8B%E8%AF%95%E5%9C%A8Jira%E4%B8%8A%E6%8F%90%E5%87%BA%E7%9A%84bug"><span class="toc-list-text">分析测试在Jira上提出的bug</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#%E5%88%86%E6%9E%90%E7%94%A8%E6%88%B7%E5%9C%A8APP%E6%8F%90%E4%BA%A4%E7%9A%84%E6%97%A5%E5%BF%97%E5%8F%8D%E9%A6%88"><span class="toc-list-text">分析用户在APP提交的日志反馈</span></a></li></ol></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#Skills-%E5%AF%B9-Bug-%E5%88%86%E6%9E%90%E6%B5%81%E7%A8%8B%E7%9A%84%E6%84%8F%E4%B9%89"><span class="toc-list-text">Skills 对 Bug 分析流程的意义</span></a></li></ol>
+    </div>
+  </aside>
+
+</div>
+
+
+
+    <!-- FOOTER -->
+    <footer class="footer">
+      <div class="footer-left">
+        © 2026 <a href="https://dcheric.github.io">DCH</a>
+        &nbsp;·&nbsp; Powered by Hexo &nbsp;·&nbsp; Hosted on GitHub Pages
+      </div>
+      <div class="footer-links">
+            <a href="https://github.com/DCHEric" class="footer-link" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://x.com/DCHtigerr" class="footer-link" target="_blank" rel="noopener">X</a>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- TWEAKS PANEL -->
+<div id="tweaks-panel">
+  <div class="tweaks-title">Tweaks</div>
+  <div class="tweak-row">
+    <span class="tweak-label">主题色</span>
+    <select class="tweak-select" id="accentSel">
+      <option value="">Cyan</option>
+      <option value="accent-green">Green</option>
+      <option value="accent-amber">Amber</option>
+      <option value="accent-purple">Purple</option>
+    </select>
+  </div>
+  <div class="tweak-row">
+    <span class="tweak-label">紧凑模式</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="compactToggle">
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>
+  </div>
+  <div class="tweak-row">
+    <span class="tweak-label">扫描线</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="scanlineToggle" checked>
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>
+  </div>
+  <div class="tweak-row">
+    <span class="tweak-label">网格背景</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="gridBgToggle" checked>
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>
+  </div>
+</div>
+
+<script src="/js/main.js"></script>
+</body>
+</html>

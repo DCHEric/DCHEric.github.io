@@ -314,6 +314,1215 @@
       </tags>
   </entry>
   <entry>
+    <title>从&quot;文本朗读&quot;到&quot;实时语音反馈&quot;：一套移动端 TTS 业务架构实践</title>
+    <url>/2026/04/10/TTS/</url>
+    <content><![CDATA[<h1 id="从”文本朗读”到”实时语音反馈”：一套移动端-TTS-业务架构实践"><a href="#从”文本朗读”到”实时语音反馈”：一套移动端-TTS-业务架构实践" class="headerlink" title="从”文本朗读”到”实时语音反馈”：一套移动端 TTS 业务架构实践"></a>从”文本朗读”到”实时语音反馈”：一套移动端 TTS 业务架构实践</h1><p>在很多产品里，TTS（Text To Speech）常常被理解成一个相对简单的能力：拿到一段文本，转成音频，然后播放出来。</p>
+<p>但当产品进入 AIGC、实时问答、语音助手、播客消费、可穿戴设备这些场景后，TTS 的角色会迅速变化。它不再只是一个“朗读器”，而开始承担起 <strong>实时反馈、状态编排、音频协同、设备打断、体验连续性优化</strong> 等更复杂的职责。</p>
+<p>在我们的客户端实践里，TTS 最终演变成了一套围绕“实时 AI 交互”组织起来的系统能力。本文不展开源码细节，而是从业务与架构视角，分享这套 TTS 体系是如何设计出来的，以及它解决了哪些真实问题。</p>
+<hr>
+<h2 id="一、为什么今天的-TTS-不能只被当作“朗读能力”"><a href="#一、为什么今天的-TTS-不能只被当作“朗读能力”" class="headerlink" title="一、为什么今天的 TTS 不能只被当作“朗读能力”"></a>一、为什么今天的 TTS 不能只被当作“朗读能力”</h2><p>如果只是做文章阅读、消息播报，传统 TTS 的工作方式通常是：</p>
+<ol>
+<li>准备一段完整文本；</li>
+<li>调用语音合成接口；</li>
+<li>拿到完整音频；</li>
+<li>播放结束。</li>
+</ol>
+<p>这种模型很适合离线、单次、低交互的内容播报。</p>
+<p>但在 AIGC 场景里，用户的感知路径已经变成了：</p>
+<blockquote>
+<p>用户提问 → 模型流式生成回答 → 回答一边出现，一边播报 → 用户可随时打断 → 系统再进入下一轮交互</p>
+</blockquote>
+<p>一旦交互链路变成这样，TTS 需要面对的问题就完全不同了：</p>
+<ul>
+<li>文本不是一次性返回，而是流式增长；</li>
+<li>播报不能等全部生成完再开始，否则反馈太慢；</li>
+<li>播放时要和 ASR、音频会话、音乐播放、外设收音互相协调；</li>
+<li>播报过程中用户可能会打断；</li>
+<li>在播客、多角色内容中，还要兼顾连续性和听感。</li>
+</ul>
+<p>所以，真正支撑用户体验的，已经不只是“会不会读”，而是：</p>
+<blockquote>
+<p><strong>TTS 能不能成为实时 AI 交互中的一个自然反馈环节。</strong></p>
+</blockquote>
+<hr>
+<h2 id="二、我们到底在解决什么问题"><a href="#二、我们到底在解决什么问题" class="headerlink" title="二、我们到底在解决什么问题"></a>二、我们到底在解决什么问题</h2><p>把 TTS 放进真实业务里，最常见的问题通常来自以下几个方面。</p>
+<h3 id="1-反馈太慢"><a href="#1-反馈太慢" class="headerlink" title="1. 反馈太慢"></a>1. 反馈太慢</h3><p>如果必须等整段回答结束才开始播报，用户会明显感觉系统“在思考”，而不是“在对话”。</p>
+<h3 id="2-半句、重复、漏播"><a href="#2-半句、重复、漏播" class="headerlink" title="2. 半句、重复、漏播"></a>2. 半句、重复、漏播</h3><p>大模型流式返回时，文本往往是不断变长的整段内容，而不是天然按句增量返回。如果直接拿流式文本去播，很容易出现：</p>
+<ul>
+<li>半句就开始读；</li>
+<li>同一段内容重复读；</li>
+<li>尾句因为 <code>isFinal</code> 时机不同而漏播。</li>
+</ul>
+<h3 id="3-播放和收音打架"><a href="#3-播放和收音打架" class="headerlink" title="3. 播放和收音打架"></a>3. 播放和收音打架</h3><p>在语音问答场景里，如果播报时收音还开着，就可能出现“自己说给自己听”的问题，造成误触发或识别污染。</p>
+<h3 id="4-打断不彻底"><a href="#4-打断不彻底" class="headerlink" title="4. 打断不彻底"></a>4. 打断不彻底</h3><p>用户打断上一轮回复后，如果只是停本地播放器，但设备端或链路侧还积压着旧音频 buffer，残音仍然会被听到，体验会非常差。</p>
+<h3 id="5-多业务并存时资源冲突"><a href="#5-多业务并存时资源冲突" class="headerlink" title="5. 多业务并存时资源冲突"></a>5. 多业务并存时资源冲突</h3><p>当问答、播客、音乐、眼镜等场景共存时，谁该优先播、谁该暂停、谁该接管音频通道，必须有明确策略。</p>
+<p>这些问题表面上看是“播报问题”，本质上其实是 <strong>实时体验编排问题</strong>。</p>
+<hr>
+<h2 id="三、一个可落地的-TTS-架构，应该怎么分层"><a href="#三、一个可落地的-TTS-架构，应该怎么分层" class="headerlink" title="三、一个可落地的 TTS 架构，应该怎么分层"></a>三、一个可落地的 TTS 架构，应该怎么分层</h2><p>为了让 TTS 从“能力点”升级为“业务系统”，我们最终把它拆成了四层。</p>
+<pre><code class="mermaid">flowchart TD
+    A[业务触发层]
+    B[TTS 编排层]
+    C[合成与播放层]
+    D[系统与设备协同层]
+
+    A --&gt; B
+    B --&gt; C
+    C --&gt; D</code></pre>
+
+<h3 id="1-业务触发层"><a href="#1-业务触发层" class="headerlink" title="1. 业务触发层"></a>1. 业务触发层</h3><p>这一层决定“什么时候该播”。</p>
+<p>比如：</p>
+<ul>
+<li>AIGC 问答回答是否需要自动朗读；</li>
+<li>用户是否主动点击播放；</li>
+<li>当前是不是语音对话态；</li>
+<li>当前是否处于后台、跳转态或外设占用态。</li>
+</ul>
+<p>这一层的核心目标不是发音，而是 <strong>做业务判断和资源仲裁</strong>。</p>
+<h3 id="2-TTS-编排层"><a href="#2-TTS-编排层" class="headerlink" title="2. TTS 编排层"></a>2. TTS 编排层</h3><p>这是整套体系的关键。它负责：</p>
+<ul>
+<li>流式文本增量处理；</li>
+<li>句子切分；</li>
+<li>合成请求调度；</li>
+<li>播放状态推进；</li>
+<li>打断与重置；</li>
+<li>针对不同场景采取不同策略。</li>
+</ul>
+<p>如果说业务层决定“要不要播”，那么编排层决定的是：</p>
+<blockquote>
+<p><strong>怎么播、播到哪、下一句什么时候进来、出了问题怎么处理。</strong></p>
+</blockquote>
+<h3 id="3-合成与播放层"><a href="#3-合成与播放层" class="headerlink" title="3. 合成与播放层"></a>3. 合成与播放层</h3><p>这一层做两件事：</p>
+<ul>
+<li>把文本转换为流式音频；</li>
+<li>把音频平滑地播放出来。</li>
+</ul>
+<p>这里最重要的不是单次播放，而是要支持：</p>
+<ul>
+<li>边收边播；</li>
+<li>按句推进；</li>
+<li>精确知道当前播到哪里；</li>
+<li>为上层提供“准备播放 &#x2F; 播放中 &#x2F; 播放结束 &#x2F; 失败”等状态。</li>
+</ul>
+<h3 id="4-系统与设备协同层"><a href="#4-系统与设备协同层" class="headerlink" title="4. 系统与设备协同层"></a>4. 系统与设备协同层</h3><p>这一层处理更贴近终端真实环境的问题：</p>
+<ul>
+<li>音频会话切换；</li>
+<li>电话&#x2F;系统打断恢复；</li>
+<li>音乐共存；</li>
+<li>蓝牙耳机路由；</li>
+<li>外设缓冲清理；</li>
+<li>RTC 下行音频接力。</li>
+</ul>
+<p>它决定了这套 TTS 能不能在真实设备上稳定工作，而不是只在理想流程里跑通。</p>
+<hr>
+<h2 id="四、AIGC-IM-场景下，TTS-为什么必须是“流式”的"><a href="#四、AIGC-IM-场景下，TTS-为什么必须是“流式”的" class="headerlink" title="四、AIGC &#x2F; IM 场景下，TTS 为什么必须是“流式”的"></a>四、AIGC &#x2F; IM 场景下，TTS 为什么必须是“流式”的</h2><p>这是最能代表当前 TTS 变化的场景。</p>
+<p>设想一个用户在 IM 问答页提问：</p>
+<blockquote>
+<p>“帮我介绍下目前 AI Agent 的发展。”</p>
+</blockquote>
+<p>云端模型不会一次性返回完整回答，而更可能像这样流式输出：</p>
+<ol>
+<li><code>AI Agent 正从单轮问答能力，</code></li>
+<li><code>AI Agent 正从单轮问答能力，逐步发展为具备规划、调用工具和执行复杂任务的智能体系统。</code></li>
+<li>第 3 包文本不再增长，但会携带“本轮结束”的信号。</li>
+</ol>
+<p>这时如果客户端直接把每一包文本都丢给播放器，会产生两个问题：</p>
+<ul>
+<li>第二包会把第一包内容重复播一遍；</li>
+<li>尾包可能没有新增文本，但又必须保证这轮播报被正确收尾。</li>
+</ul>
+<p>因此，我们在 TTS 编排层里做了三件关键事情。</p>
+<h3 id="1-只处理“新增文本”"><a href="#1-只处理“新增文本”" class="headerlink" title="1. 只处理“新增文本”"></a>1. 只处理“新增文本”</h3><p>不是拿整段文本直接播，而是和上一轮文本做比较，只提取这次真正新增的部分。</p>
+<h3 id="2-只在“适合播”的时候入队"><a href="#2-只在“适合播”的时候入队" class="headerlink" title="2. 只在“适合播”的时候入队"></a>2. 只在“适合播”的时候入队</h3><p>新增内容还要继续经过过滤：</p>
+<ul>
+<li>纯换行不播；</li>
+<li>纯标点不播；</li>
+<li>半句暂缓，等后续内容补齐。</li>
+</ul>
+<h3 id="3-用尾包信号做收尾补偿"><a href="#3-用尾包信号做收尾补偿" class="headerlink" title="3. 用尾包信号做收尾补偿"></a>3. 用尾包信号做收尾补偿</h3><p>最后一包即使没有继续增长，也要让系统知道：</p>
+<ul>
+<li>本轮回答已经结束；</li>
+<li>如果还有尾句没播，需要补齐；</li>
+<li>整轮播报结束后，状态要回到空闲态。</li>
+</ul>
+<p>从用户角度看，这意味着系统表现出来的是：</p>
+<blockquote>
+<p>回答不是“一下子说完”，而是像真人一样，边组织语言边开始反馈。</p>
+</blockquote>
+<p>这正是“实时感”的来源。</p>
+<hr>
+<h2 id="五、一个真实的-AIGC-IM-播报流程，应该长什么样"><a href="#五、一个真实的-AIGC-IM-播报流程，应该长什么样" class="headerlink" title="五、一个真实的 AIGC &#x2F; IM 播报流程，应该长什么样"></a>五、一个真实的 AIGC &#x2F; IM 播报流程，应该长什么样</h2><p>为了更直观地理解这套设计，我们把整个流程还原成一条业务链路。</p>
+<h3 id="阶段一：业务层决定是否可以播"><a href="#阶段一：业务层决定是否可以播" class="headerlink" title="阶段一：业务层决定是否可以播"></a>阶段一：业务层决定是否可以播</h3><p>当 AIGC 响应开始流式返回时，业务层首先不会急着播，而会判断：</p>
+<ul>
+<li>当前用户是否开启了语音播报；</li>
+<li>当前是不是游客模式；</li>
+<li>是否存在外设正在占用播报能力；</li>
+<li>当前页面是否处于适合播报的前台场景；</li>
+<li>当前是否需要等待更高优先级的展示逻辑完成。</li>
+</ul>
+<p>也就是说，TTS 的第一步不是合成，而是 <strong>做选择</strong>。</p>
+<h3 id="阶段二：流式文本进入-TTS-编排层"><a href="#阶段二：流式文本进入-TTS-编排层" class="headerlink" title="阶段二：流式文本进入 TTS 编排层"></a>阶段二：流式文本进入 TTS 编排层</h3><p>一旦业务层判断“可以播”，文本就会进入编排层。</p>
+<p>此时编排层并不会把整段文本立即送去合成，而是会：</p>
+<ol>
+<li>对比上一轮已处理文本；</li>
+<li>提取新增部分；</li>
+<li>判断是否为有效句子；</li>
+<li>把可播内容拆成句子，放入待合成队列。</li>
+</ol>
+<p>这一步实际上把“模型文本流”转换成了“播报任务流”。</p>
+<h3 id="阶段三：句子级流式合成启动"><a href="#阶段三：句子级流式合成启动" class="headerlink" title="阶段三：句子级流式合成启动"></a>阶段三：句子级流式合成启动</h3><p>待播句子一旦准备好，就会启动流式合成会话。</p>
+<p>这里和传统 TTS 最大的不同是：</p>
+<ul>
+<li>不是一段文本对应一个完整音频文件；</li>
+<li>而是一句句文本逐步送入；</li>
+<li>音频也会一点点返回。</li>
+</ul>
+<p>因此整个过程更像“推流 + 拉流”的组合，而不是“请求 + 下载”。</p>
+<h3 id="阶段四：音频边回边播"><a href="#阶段四：音频边回边播" class="headerlink" title="阶段四：音频边回边播"></a>阶段四：音频边回边播</h3><p>当音频开始回流后，播放层会立即将其送入缓冲队列，驱动本地播放器开始输出。</p>
+<p>这时 TTS 不再是“离线产物”，而成了一个实时媒体流。</p>
+<p>它带来的好处很直接：</p>
+<ul>
+<li>首次语音反馈更快；</li>
+<li>整体回答更自然；</li>
+<li>用户更容易感知到“系统已经开始响应我了”。</li>
+</ul>
+<h3 id="阶段五：播放状态反向驱动-UI"><a href="#阶段五：播放状态反向驱动-UI" class="headerlink" title="阶段五：播放状态反向驱动 UI"></a>阶段五：播放状态反向驱动 UI</h3><p>在问答页里，TTS 不只是声音能力，它还会反向驱动 UI：</p>
+<ul>
+<li>当前回答卡片进入“朗读中”；</li>
+<li>播放结束后按钮恢复默认态；</li>
+<li>播放失败时给出兜底提示；</li>
+<li>某些情况下还会影响页面休眠策略。</li>
+</ul>
+<p>所以最终呈现给用户的不是“音频自己播”，而是一个 <strong>声音与界面状态同步变化的交互结果</strong>。</p>
+<h3 id="结合代码理解：这条链路在工程里通常会怎么写"><a href="#结合代码理解：这条链路在工程里通常会怎么写" class="headerlink" title="结合代码理解：这条链路在工程里通常会怎么写"></a>结合代码理解：这条链路在工程里通常会怎么写</h3><h4 id="1）业务层先决定这包-spokenText-是否应该触发-TTS"><a href="#1）业务层先决定这包-spokenText-是否应该触发-TTS" class="headerlink" title="1）业务层先决定这包 spokenText 是否应该触发 TTS"></a>1）业务层先决定这包 <code>spokenText</code> 是否应该触发 TTS</h4><figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">handleStreamingMessage</span>(<span class="keyword">_</span> <span class="params">message</span>: <span class="type">ChatMessage</span>, <span class="params">index</span>: <span class="type">Int</span>) &#123;</span><br><span class="line">    <span class="keyword">let</span> spokenText <span class="operator">=</span> message.spokenText</span><br><span class="line">    <span class="keyword">let</span> isFinal <span class="operator">=</span> message.isFinal</span><br><span class="line"></span><br><span class="line">    <span class="keyword">guard</span> <span class="operator">!</span>spokenText.isEmpty <span class="keyword">else</span> &#123; <span class="keyword">return</span> &#125;</span><br><span class="line"></span><br><span class="line">    firstPacketIndex <span class="operator">+=</span> <span class="number">1</span></span><br><span class="line">    <span class="keyword">if</span> firstPacketIndex <span class="operator">==</span> <span class="number">0</span> &#123;</span><br><span class="line">        cachedSpokenText <span class="operator">=</span> <span class="string">&quot;&quot;</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> audioSwitchOn <span class="operator">&amp;&amp;</span> canStartTTS <span class="operator">&amp;&amp;</span> <span class="operator">!</span>isInOtherVoiceScene &#123;</span><br><span class="line">        startTTS(</span><br><span class="line">            text: spokenText,</span><br><span class="line">            isFirst: firstPacketIndex <span class="operator">==</span> <span class="number">0</span>,</span><br><span class="line">            isFinal: isFinal,</span><br><span class="line">            currentIndex: index</span><br><span class="line">        )</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        cachedSpokenText <span class="operator">=</span> spokenText</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段逻辑对应的核心思想是：</p>
+<ul>
+<li>先拿到流式返回的 <code>spokenText</code>；</li>
+<li>再判断当前是否允许播报；</li>
+<li>能播就立刻进入 TTS；</li>
+<li>不能播就先缓存，等合适时机再补播。</li>
+</ul>
+<p>也就是说，在真实工程里，<strong>TTS 的入口一定是业务判断之后的结果</strong>，而不是模型一来文本就无条件往下播。</p>
+<h4 id="2）编排层负责把“不断变长的整段文本”变成“可播的新增句子”"><a href="#2）编排层负责把“不断变长的整段文本”变成“可播的新增句子”" class="headerlink" title="2）编排层负责把“不断变长的整段文本”变成“可播的新增句子”"></a>2）编排层负责把“不断变长的整段文本”变成“可播的新增句子”</h4><figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">addSentence</span>(<span class="params">text</span>: <span class="type">String</span>, <span class="params">isFirstPackage</span>: <span class="type">Bool</span>, <span class="params">isFinal</span>: <span class="type">Bool</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> isFirstPackage &#123;</span><br><span class="line">        resetPlaybackContext()</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> text.count <span class="operator">&gt;</span> lastSpokenText.count &#123;</span><br><span class="line">        <span class="keyword">let</span> delta <span class="operator">=</span> text.suffix(text.count <span class="operator">-</span> lastSpokenText.count)</span><br><span class="line">        lastSpokenText <span class="operator">=</span> text</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> isValid(delta) <span class="operator">||</span> isFinal &#123;</span><br><span class="line">            splitAndEnqueue(delta, isFinal: isFinal)</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            rollbackLastSpokenText(by: delta.count)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> <span class="operator">!</span>isReceiving <span class="operator">&amp;&amp;</span> stream <span class="operator">==</span> <span class="literal">nil</span> &#123;</span><br><span class="line">        startStreamSynthesis()</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这一层解决的是流式 TTS 里最关键的问题：</p>
+<ul>
+<li>大模型返回的是整段增长文本；</li>
+<li>TTS 真正需要的是“这次新增了什么”；</li>
+<li>新增内容还得进一步判断是否值得播、是否已经成句。</li>
+</ul>
+<p>如果没有这层编排，最常见的问题就是重复播、半句播、尾句漏播。</p>
+<h4 id="3）合成与播放层负责把文本流真正变成“边回边播”的音频流"><a href="#3）合成与播放层负责把文本流真正变成“边回边播”的音频流" class="headerlink" title="3）合成与播放层负责把文本流真正变成“边回边播”的音频流"></a>3）合成与播放层负责把文本流真正变成“边回边播”的音频流</h4><figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">startStreamSynthesis</span>() &#123;</span><br><span class="line">    <span class="keyword">let</span> request <span class="operator">=</span> <span class="type">SynthRequest</span>(</span><br><span class="line">        speaker: defaultSpeaker,</span><br><span class="line">        scene: .im,</span><br><span class="line">        metadata: buildRuntimeMetadata()</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    stream <span class="operator">=</span> speechEngine.createStream()</span><br><span class="line">    stream<span class="operator">?</span>.config(request)</span><br><span class="line">    stream<span class="operator">?</span>.send(nextSentence())</span><br><span class="line"></span><br><span class="line">    receiveLoop &#123; audioChunk <span class="keyword">in</span></span><br><span class="line">        player.play(audioChunk)</span><br><span class="line">    &#125; onFinish: &#123;</span><br><span class="line">        updatePlayerStatus(.finished)</span><br><span class="line">    &#125; onError: &#123; error <span class="keyword">in</span></span><br><span class="line">        updatePlayerStatus(.failed)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里的重点不在于具体 SDK 接口，而在于链路形态：</p>
+<ul>
+<li>先创建流式合成会话；</li>
+<li>再把句子送给合成引擎；</li>
+<li>音频不是一次性下载，而是 chunk 级回流；</li>
+<li>播放器收到 chunk 后立即开始输出；</li>
+<li>状态回调继续反向驱动业务层。</li>
+</ul>
+<p>从架构视角看，这里真正建立起来的是一条：</p>
+<blockquote>
+<p><strong>文本流 → 合成流 → 音频流 → 页面状态流</strong></p>
+</blockquote>
+<p>而不是单纯一次函数调用。</p>
+<h3 id="一个来自项目实践的-AIGC-IM-全流程案例"><a href="#一个来自项目实践的-AIGC-IM-全流程案例" class="headerlink" title="一个来自项目实践的 AIGC &#x2F; IM 全流程案例"></a>一个来自项目实践的 AIGC &#x2F; IM 全流程案例</h3><p>如果把这套设计放回真实项目，一个典型的 AIGC &#x2F; IM TTS 全流程大致会是这样：</p>
+<h4 id="第一步：用户发起问题"><a href="#第一步：用户发起问题" class="headerlink" title="第一步：用户发起问题"></a>第一步：用户发起问题</h4><p>用户在 IM 问答页输入：</p>
+<blockquote>
+<p>“帮我介绍下目前 AI Agent 的发展。”</p>
+</blockquote>
+<p>此时页面进入“等待回答”状态，模型开始以流式方式返回 <code>displayText</code> 和 <code>spokenText</code>。</p>
+<h4 id="第二步：业务层先处理流式消息，而不是直接播放"><a href="#第二步：业务层先处理流式消息，而不是直接播放" class="headerlink" title="第二步：业务层先处理流式消息，而不是直接播放"></a>第二步：业务层先处理流式消息，而不是直接播放</h4><p>每收到一包消息，页面层会同步更新：</p>
+<ul>
+<li>用于展示的文本；</li>
+<li>用于播报的文本；</li>
+<li>本轮是否结束；</li>
+<li>当前是否允许启动 TTS。</li>
+</ul>
+<p>这一步的职责是“接消息”，不是“播消息”。</p>
+<h4 id="第三步：如果满足条件，就把-spokenText-交给-TTS-编排层"><a href="#第三步：如果满足条件，就把-spokenText-交给-TTS-编排层" class="headerlink" title="第三步：如果满足条件，就把 spokenText 交给 TTS 编排层"></a>第三步：如果满足条件，就把 <code>spokenText</code> 交给 TTS 编排层</h4><p>当满足以下条件时，TTS 才真正启动：</p>
+<ul>
+<li>用户开启了语音播报；</li>
+<li>当前不是游客或受限态；</li>
+<li>当前没有被其它语音场景占用；</li>
+<li>当前不需要等待更高优先级的展示流程。</li>
+</ul>
+<p>如果此时不适合立刻播，项目里会先缓存 <code>spokenText</code>，而不是丢弃。</p>
+<h4 id="第四步：编排层提取增量、切句、入队"><a href="#第四步：编排层提取增量、切句、入队" class="headerlink" title="第四步：编排层提取增量、切句、入队"></a>第四步：编排层提取增量、切句、入队</h4><p>真实项目里，TTS 底座会把本轮整段文本和上一轮文本比较，只拿出新增部分，再做：</p>
+<ul>
+<li>无效文本过滤；</li>
+<li>标点切句；</li>
+<li>尾句补偿；</li>
+<li>待播队列入队。</li>
+</ul>
+<p>这一层做完之后，系统手里拿到的已经不是“模型吐出来的一段字符串”，而是一组 <strong>可调度的播报单元</strong>。</p>
+<h4 id="第五步：句子级合成会话启动"><a href="#第五步：句子级合成会话启动" class="headerlink" title="第五步：句子级合成会话启动"></a>第五步：句子级合成会话启动</h4><p>每当待播队列中有可播句子，系统就会：</p>
+<ol>
+<li>创建流式合成会话；</li>
+<li>注入运行时上下文（设备、环境、用户态等）；</li>
+<li>发送当前句子；</li>
+<li>开始接收音频回流。</li>
+</ol>
+<p>这一步意味着 TTS 已经从业务层正式进入媒体层。</p>
+<h4 id="第六步：音频-chunk-回流，本地边收边播"><a href="#第六步：音频-chunk-回流，本地边收边播" class="headerlink" title="第六步：音频 chunk 回流，本地边收边播"></a>第六步：音频 chunk 回流，本地边收边播</h4><p>真实播放不是“等整句音频完整返回再播”，而是：</p>
+<ul>
+<li>先收到第一批音频 chunk；</li>
+<li>立即推入缓冲区；</li>
+<li>播放器开始输出；</li>
+<li>后续 chunk 持续补进来。</li>
+</ul>
+<p>用户感知到的是“回答一边生成，一边开始读”，这也是整个体验自然度最关键的一环。</p>
+<h4 id="第七步：播放状态反向驱动-AIGC-页-UI"><a href="#第七步：播放状态反向驱动-AIGC-页-UI" class="headerlink" title="第七步：播放状态反向驱动 AIGC 页 UI"></a>第七步：播放状态反向驱动 AIGC 页 UI</h4><p>在项目实践里，TTS 状态通常会继续影响：</p>
+<ul>
+<li>当前回答气泡是否显示“朗读中”；</li>
+<li>播放结束后按钮是否恢复；</li>
+<li>播放失败时是否提示用户重试；</li>
+<li>页面是否需要临时禁止自动熄屏。</li>
+</ul>
+<p>也就是说，TTS 不是只负责出声，它还负责把“声音已经发生”这件事同步回交互层。</p>
+<h4 id="第八步：若中途被打断，整条链路要一起收口"><a href="#第八步：若中途被打断，整条链路要一起收口" class="headerlink" title="第八步：若中途被打断，整条链路要一起收口"></a>第八步：若中途被打断，整条链路要一起收口</h4><p>如果用户在此时：</p>
+<ul>
+<li>主动停止播放；</li>
+<li>切到其它语音业务；</li>
+<li>眼镜等外设开始接管语音通道；</li>
+</ul>
+<p>那真实项目里不会只做“播放器 stop”，而是要同时做：</p>
+<ul>
+<li>停掉当前合成流；</li>
+<li>清空本地缓存；</li>
+<li>重置句子队列与索引；</li>
+<li>把页面状态回到安全态；</li>
+<li>必要时通知设备侧清 buffer。</li>
+</ul>
+<p>这也是为什么在工程实践里，TTS 一定要被当成“链路能力”而不是“播放器能力”。</p>
+<h3 id="用一句话概括这个实践全流程"><a href="#用一句话概括这个实践全流程" class="headerlink" title="用一句话概括这个实践全流程"></a>用一句话概括这个实践全流程</h3><p>如果把这套项目实践压缩成一句话，它其实就是：</p>
+<blockquote>
+<p><strong>AIGC 页面收到流式 <code>spokenText</code> → 业务层做场景仲裁 → 编排层提取增量并切句 → 媒体层启动流式合成 → 音频 chunk 边回边播 → 状态继续反向驱动 UI → 被打断时整条链路统一收口。</strong></p>
+</blockquote>
+<p>这条链路之所以重要，不是因为它让系统“能播声音”，而是因为它让 AIGC &#x2F; IM 场景中的语音反馈真正具备了实时性、连续性和可控性。</p>
+<hr>
+<h2 id="六、为什么有些回答不能“马上播”"><a href="#六、为什么有些回答不能“马上播”" class="headerlink" title="六、为什么有些回答不能“马上播”"></a>六、为什么有些回答不能“马上播”</h2><p>在 AIGC 场景里，回答并不总是简单的纯文本输出。有些回答还会伴随：</p>
+<ul>
+<li>推理过程；</li>
+<li>工作流内容；</li>
+<li>分阶段展示；</li>
+<li>多模态内容生成。</li>
+</ul>
+<p>这意味着，文本虽然到了，但播报不一定应该立即开始。</p>
+<p>在我们的设计里，TTS 的启动会受到展示节奏影响：</p>
+<ul>
+<li>如果当前内容仍在更适合“先看后听”的阶段，播报会被延后；</li>
+<li>如果某段流程需要先把内容组织完整，再进入语音反馈，那么文本会先被缓存；</li>
+<li>等展示层完成关键阶段后，再统一触发播报。</li>
+</ul>
+<p>这背后的核心原则是：</p>
+<blockquote>
+<p><strong>语音反馈要服务于整体体验，而不是机械地追求“文本一到就播”。</strong></p>
+</blockquote>
+<p>这也是为什么今天的 TTS 更像一个业务编排组件，而不是传统意义上的“播放器插件”。</p>
+<hr>
+<h2 id="七、TTS-为什么一定要参与状态机设计"><a href="#七、TTS-为什么一定要参与状态机设计" class="headerlink" title="七、TTS 为什么一定要参与状态机设计"></a>七、TTS 为什么一定要参与状态机设计</h2><p>如果产品只是内容朗读，TTS 通常不需要复杂状态机。</p>
+<p>但在语音问答中，TTS 往往是整个交互状态链路中的一个核心节点。</p>
+<p>典型状态可能包括：</p>
+<ul>
+<li>空闲；</li>
+<li>识别中；</li>
+<li>思考中；</li>
+<li>播报中；</li>
+<li>暂停；</li>
+<li>失败；</li>
+<li>被打断。</li>
+</ul>
+<p>TTS 一旦开始播放，系统通常需要同步做两件事：</p>
+<ol>
+<li>暂停收音，避免回声和误识别；</li>
+<li>将交互态切到“播报中”，让 UI 和用户预期保持一致。</li>
+</ol>
+<p>而当播放结束，系统又要继续做两件事：</p>
+<ol>
+<li>回到空闲或聆听态；</li>
+<li>重新准备下一轮收音。</li>
+</ol>
+<p>因此，TTS 在实时语音产品里更像是：</p>
+<blockquote>
+<p><strong>一段会改变系统状态的媒体行为，而不是一个独立的输出动作。</strong></p>
+</blockquote>
+<hr>
+<h2 id="八、除了-AIGC，播客场景又为什么更复杂"><a href="#八、除了-AIGC，播客场景又为什么更复杂" class="headerlink" title="八、除了 AIGC，播客场景又为什么更复杂"></a>八、除了 AIGC，播客场景又为什么更复杂</h2><p>如果说 AIGC 问答解决的是“实时反馈”，那播客类场景解决的则是“连续听感”。</p>
+<p>在这类场景里，TTS 会遇到另外几类问题：</p>
+<ul>
+<li>多角色发言如何切换音色；</li>
+<li>当前段落播完后，下一段如何无缝接上；</li>
+<li>当前条目接近播完时，是否应该提前准备下一条；</li>
+<li>当中途失败时，是整条失败还是句子级重试。</li>
+</ul>
+<p>这类问题的本质不是“能不能播”，而是：</p>
+<blockquote>
+<p><strong>能不能播得连续、自然、像一个完整节目，而不是一堆断开的语音片段。</strong></p>
+</blockquote>
+<p>因此，在播客场景中，TTS 编排层往往会引入更多策略：</p>
+<ul>
+<li>句子级推进；</li>
+<li>角色级状态；</li>
+<li>预缓存下一段；</li>
+<li>局部失败重试；</li>
+<li>当前条和下一条之间的衔接时机控制。</li>
+</ul>
+<p>这也是为什么，同样是 TTS，播客场景和 AIGC 问答场景在实现重点上会完全不同。</p>
+<hr>
+<h2 id="九、为什么“打断”是-TTS-架构里必须单独设计的能力"><a href="#九、为什么“打断”是-TTS-架构里必须单独设计的能力" class="headerlink" title="九、为什么“打断”是 TTS 架构里必须单独设计的能力"></a>九、为什么“打断”是 TTS 架构里必须单独设计的能力</h2><p>在语音助手场景里，打断不是异常，而是高频行为。</p>
+<p>用户经常会在系统播报过程中：</p>
+<ul>
+<li>直接开口打断；</li>
+<li>切换到另一个语音业务；</li>
+<li>连接外设；</li>
+<li>主动点击停止。</li>
+</ul>
+<p>如果打断只是停掉当前播放器，往往还不够。</p>
+<p>真正的问题在于，链路中可能还有很多“未消费完的内容”：</p>
+<ul>
+<li>本地缓冲里的音频；</li>
+<li>服务侧还在回流的数据；</li>
+<li>外设侧尚未播完的 buffer；</li>
+<li>UI 层仍处于播放态的状态残留。</li>
+</ul>
+<p>因此，一个有效的打断机制通常要同时完成：</p>
+<ol>
+<li>停止当前合成流；</li>
+<li>停止本地播放；</li>
+<li>清空本地音频缓存；</li>
+<li>必要时通知设备侧清空 buffer；</li>
+<li>重置句子队列和播放索引；</li>
+<li>把业务状态回到可恢复的安全态。</li>
+</ol>
+<p>只有这样，用户才会真正感觉到“我刚才已经打断成功了”。</p>
+<hr>
+<h2 id="十、当-TTS-进入外设和-RTC-场景，问题又变了"><a href="#十、当-TTS-进入外设和-RTC-场景，问题又变了" class="headerlink" title="十、当 TTS 进入外设和 RTC 场景，问题又变了"></a>十、当 TTS 进入外设和 RTC 场景，问题又变了</h2><p>在手机本地扬声器播报时，TTS 主要解决的是“生成并播放”。</p>
+<p>但在眼镜、车载、耳机等外设场景里，TTS 的定位会进一步变化。</p>
+<p>此时更常见的链路是：</p>
+<blockquote>
+<p>外设采音 → App 作为桥接层上传 → 云端理解与生成 → 云端返回 TTS 音频 → App 转发给外设播放</p>
+</blockquote>
+<p>在这条链路中，App 不再只是最终播放端，更像是 <strong>实时音频与事件的编排中心</strong>。</p>
+<p>这时两个问题会变得特别重要。</p>
+<h3 id="1-上行音频不能丢"><a href="#1-上行音频不能丢" class="headerlink" title="1. 上行音频不能丢"></a>1. 上行音频不能丢</h3><p>设备唤醒后，用户第一句话往往最关键。但 RTC 会话未必已经建好。</p>
+<p>如果此时没有预缓存，上行首包语音就可能直接丢失，表现为：</p>
+<ul>
+<li>首词缺失；</li>
+<li>识别不完整；</li>
+<li>用户觉得“设备没听见”。</li>
+</ul>
+<h3 id="2-下行音频必须支持-clearBuffer"><a href="#2-下行音频必须支持-clearBuffer" class="headerlink" title="2. 下行音频必须支持 clearBuffer"></a>2. 下行音频必须支持 clearBuffer</h3><p>如果上一轮播报还在设备缓冲区里，而新一轮会话已经开始，仅仅停本地播放是不够的。</p>
+<p>因此，下行音频事件最好天然带有“清 buffer”的语义，业务层收到后可以立刻通知外设清理积压内容。</p>
+<p>这也是为什么，在外设场景里，TTS 不再只是一个内容生成问题，而是：</p>
+<blockquote>
+<p><strong>一条需要和 RTC、设备控制、打断机制一起设计的实时媒体链路。</strong></p>
+</blockquote>
+<hr>
+<h2 id="十一、为什么音频会话管理是这套架构成立的前提"><a href="#十一、为什么音频会话管理是这套架构成立的前提" class="headerlink" title="十一、为什么音频会话管理是这套架构成立的前提"></a>十一、为什么音频会话管理是这套架构成立的前提</h2><p>很多人讨论 TTS 时，会把注意力集中在“语音合成”上，但在移动端，真正影响稳定性的往往是音频会话。</p>
+<p>因为一个真实产品需要同时面对：</p>
+<ul>
+<li>录音；</li>
+<li>播报；</li>
+<li>音乐播放；</li>
+<li>蓝牙耳机；</li>
+<li>电话打断；</li>
+<li>前后台切换。</li>
+</ul>
+<p>如果音频会话切换策略不清晰，就很容易出现这些问题：</p>
+<ul>
+<li>有文本但没声音；</li>
+<li>播报走错了输出设备；</li>
+<li>收音和播放互相抢占；</li>
+<li>电话结束后链路恢复不了。</li>
+</ul>
+<p>所以在我们的实践里，音频会话不是 TTS 的附属配置，而是核心基础设施。</p>
+<p>只有把“录音态”和“播放态”切换设计清楚，TTS 才能真正进入复杂业务场景。</p>
+<hr>
+<h2 id="十二、可观测性为什么必须从第一天就设计进去"><a href="#十二、可观测性为什么必须从第一天就设计进去" class="headerlink" title="十二、可观测性为什么必须从第一天就设计进去"></a>十二、可观测性为什么必须从第一天就设计进去</h2><p>TTS 这类实时能力上线后，最难排查的问题往往不是功能错误，而是体验问题：</p>
+<ul>
+<li>为什么这次播报感觉慢了半秒？</li>
+<li>为什么明明合成成功了，用户还是没听见？</li>
+<li>为什么打断有时有效，有时有残音？</li>
+<li>为什么某些网络环境下播报卡顿？</li>
+</ul>
+<p>如果没有可观测性，这些问题几乎无法复盘。</p>
+<p>因此我们比较看重以下几类指标：</p>
+<h3 id="1-生命周期指标"><a href="#1-生命周期指标" class="headerlink" title="1. 生命周期指标"></a>1. 生命周期指标</h3><ul>
+<li>合成会话启动成功率；</li>
+<li>播放成功率；</li>
+<li>中断原因分布；</li>
+<li>会话结束原因分布。</li>
+</ul>
+<h3 id="2-时延指标"><a href="#2-时延指标" class="headerlink" title="2. 时延指标"></a>2. 时延指标</h3><ul>
+<li>从文本到首包音频的耗时；</li>
+<li>从回答结束到播报结束的耗时；</li>
+<li>音频回包间隔；</li>
+<li>外设链路的转发时延。</li>
+</ul>
+<h3 id="3-环境指标"><a href="#3-环境指标" class="headerlink" title="3. 环境指标"></a>3. 环境指标</h3><ul>
+<li>当前网络类型；</li>
+<li>当前音频路由；</li>
+<li>当前前后台状态；</li>
+<li>当前场景类型。</li>
+</ul>
+<p>只有把这些指标建起来，TTS 才能从“可用”走向“稳定”。</p>
+<hr>
+<h2 id="十三、这套-TTS-架构带来的核心价值是什么"><a href="#十三、这套-TTS-架构带来的核心价值是什么" class="headerlink" title="十三、这套 TTS 架构带来的核心价值是什么"></a>十三、这套 TTS 架构带来的核心价值是什么</h2><p>回到最初的问题：我们为什么要把一个看似简单的语音播报能力，做成一套完整的业务架构？</p>
+<p>答案其实很直接。</p>
+<p>因为在今天的 AI 产品里，TTS 早就不只是把文本读出来，它承担的是：</p>
+<h3 id="1-更快的反馈感"><a href="#1-更快的反馈感" class="headerlink" title="1. 更快的反馈感"></a>1. 更快的反馈感</h3><p>通过流式播报，用户更早听到系统回应，等待感大幅降低。</p>
+<h3 id="2-更自然的交互感"><a href="#2-更自然的交互感" class="headerlink" title="2. 更自然的交互感"></a>2. 更自然的交互感</h3><p>系统不是“先沉默很久，再一次性说完”，而是像对话一样，逐步回应。</p>
+<h3 id="3-更稳定的多场景适配能力"><a href="#3-更稳定的多场景适配能力" class="headerlink" title="3. 更稳定的多场景适配能力"></a>3. 更稳定的多场景适配能力</h3><p>同一套 TTS 编排能力，可以支撑：</p>
+<ul>
+<li>AIGC 问答；</li>
+<li>语音助手；</li>
+<li>播客连续播报；</li>
+<li>外设语音反馈；</li>
+<li>实时会话链路扩展。</li>
+</ul>
+<h3 id="4-更可控的打断与恢复体验"><a href="#4-更可控的打断与恢复体验" class="headerlink" title="4. 更可控的打断与恢复体验"></a>4. 更可控的打断与恢复体验</h3><p>当用户行为越来越实时，打断、切换、重入就成为常态。只有把这些视为架构问题，TTS 才不会在复杂场景里失控。</p>
+<hr>
+<h2 id="十四、最后总结：TTS-已经是“实时交互系统”的一部分"><a href="#十四、最后总结：TTS-已经是“实时交互系统”的一部分" class="headerlink" title="十四、最后总结：TTS 已经是“实时交互系统”的一部分"></a>十四、最后总结：TTS 已经是“实时交互系统”的一部分</h2><p>如果用一句话总结这次实践，我会说：</p>
+<blockquote>
+<p><strong>今天的 TTS，已经不该被理解成一个独立的语音朗读模块，而应该被看作实时 AI 交互系统中的反馈中枢。</strong></p>
+</blockquote>
+<p>它连接的是：</p>
+<ul>
+<li>模型输出；</li>
+<li>用户听觉反馈；</li>
+<li>页面状态；</li>
+<li>音频会话；</li>
+<li>外设与 RTC；</li>
+<li>打断与恢复机制。</li>
+</ul>
+<p>也正因为如此，一套真正可落地的 TTS 架构，关注点从来不只是“合成效果好不好”，而是：</p>
+<ul>
+<li>能不能更快开始；</li>
+<li>能不能自然地边说边播；</li>
+<li>能不能在复杂场景中稳定运行；</li>
+<li>能不能在被打断后快速恢复；</li>
+<li>能不能成为整个实时交互链路里可靠的一环。</li>
+</ul>
+<p>当我们从这个角度重新理解 TTS，它就不再只是”给文本配声音”，而是在产品体验层面，真正承担起了 <strong>让 AI 回答变得可感知、可打断、可持续</strong> 的责任。</p>
+<hr>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
+<li><a href="https://www.bilibili.com/video/BV17U7jziEPD/">AI 语音克隆进入”零样本”时代？解析 TTS 模型四大流派与问鼎榜首的 MiniMax【硅谷101】</a> —— 硅谷101</li>
+</ul>
+]]></content>
+      <categories>
+        <category>iOS架构设计</category>
+      </categories>
+      <tags>
+        <tag>TTS</tag>
+        <tag>AI Agent</tag>
+        <tag>实时对话</tag>
+        <tag>音频架构</tag>
+        <tag>语音合成</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>AI工程范式的三次演化：Prompt Engineering → Context Engineering → Harness Engineering</title>
+    <url>/2026/04/07/ai-engineering-paradigm-evolution/</url>
+    <content><![CDATA[<p>最近有一个概念「Harness Engineering」开始兴起，看到很多堆砌概念的文章，读了没什么用。</p>
+<p>结合实际经历来理解了一下。总的来说，结论是：如果目标只是让模型在一轮对话里回答得更像样，Prompt Engineering 依然重要；但如果目标变成「让 Agent 连续几十分钟完成一个真实任务」，只优化提示词通常是不够的。很多失败并不是模型不会写，而是它不知道该看什么、能用什么、错了以后怎样自我校正。它缺少了一些运行的环境和良好的规范。</p>
+<span id="more"></span>
+
+<p>这篇文章想回答三个更具体的问题：</p>
+<ul>
+<li>Prompt Engineering、Context Engineering、Harness Engineering 分别在解决什么问题？</li>
+<li>为什么在 coding agent 场景里，后者会越来越重要？</li>
+<li>当 Agent 表现不好时，我应该怎么做？</li>
+</ul>
+<p>首先，结论是：<strong>这三者不是替代关系，而是同一套 AI 工程系统的三个层次。</strong></p>
+<ul>
+<li>Prompt 决定你如何发出任务</li>
+<li>Context 决定模型在关键时刻能看到什么</li>
+<li>Harness 决定模型在什么运行机制里完成任务</li>
+</ul>
+<p>它们的外延其实是越来越大的。</p>
+<p>当我们的目标从「答对一道题」变成「稳定完成一段工作流」，系统重心就会自然外移。我们会先发现优化 prompt 不够，再发现只补上下文也不够，最后不得不处理运行环境、反馈回路、权限边界和记录系统这些更工程化的问题。</p>
+<p>所以，这篇文章表面上是在讲三次演化，真正落点其实是一个更实用的启示：<strong>在 coding agent 场景里，很多问题并不是「prompt 还不够好」，而是我们没有把系统搭好。</strong>（我理解的 harness 工程的核心思想）</p>
+<h2 id="1-Prompt-Engineering：先把任务说清楚"><a href="#1-Prompt-Engineering：先把任务说清楚" class="headerlink" title="1. Prompt Engineering：先把任务说清楚"></a>1. Prompt Engineering：先把任务说清楚</h2><p>大多数人第一次接触 LLM，都是从 prompt 开始的。打开 ChatGPT、DeepSeek 或豆包，在输入框里写一句话，模型给你一段回答。比如，在输入框输入文字：「中国的首都是哪里」答：「北京」。这种交互方式诞生了大量的 ChatBot。它将模型的能力封装成了一个更高效的知识库、数据库、搜索引擎产品。这个阶段，AI 的核心是问答任务，即如何更好的输出用户想要的答案。</p>
+<p>这一阶段最常见的方法，基本都在解决同一件事：如何让模型更准确地理解我们的意图。所以大家都是在研究提示词技巧：</p>
+<ul>
+<li>设定身份、背景、行为的格式化方法</li>
+<li>举例子给模型，所谓 one shot&#x2F;few shot</li>
+<li>让模型一步步思考的思维链方法</li>
+<li>让模型推理行动观测的 ReAct 方法（这里已经初步演进到 agent 的概念了）</li>
+</ul>
+<p>严格一点说，Prompt Engineering 不只是「写一句更有效的话」，还包括测试、评估和迭代。它解决的是输入表达问题。</p>
+<p>但它的边界也很明确：</p>
+<ul>
+<li>它不能凭空给模型补进我们的私域知识</li>
+<li>它不能让模型知道今天的外部世界发生了什么</li>
+<li>它不能天然解决跨轮对话的持续记忆</li>
+<li>它也不能代替权限控制、执行环境和错误恢复机制</li>
+</ul>
+<p>我们对 LLM 的期待不是一个高级的数据库查询式的问答，我们希望它能处理上述事情。实际上，我们是在期待一个 Agent，而 Agent 的任务是多步执行。</p>
+<h2 id="2-Context-Engineering：决定模型在关键时刻能看到什么"><a href="#2-Context-Engineering：决定模型在关键时刻能看到什么" class="headerlink" title="2. Context Engineering：决定模型在关键时刻能看到什么"></a>2. Context Engineering：决定模型在关键时刻能看到什么</h2><p>模型是通过上下文窗口来工作的，prompt 是其中的一部分。当任务从问答变成执行，问题的重心就从「如何提问」迁移成「如何组织上下文」。</p>
+<p>这里的上下文，不只是 system prompt。凡是会进入模型视野、影响其下一步决策的信息，都可以算上下文，例如：</p>
+<ul>
+<li>提示词</li>
+<li>用户输入</li>
+<li>工具定义</li>
+<li>工具返回结果</li>
+<li>历史对话</li>
+<li>检索出的知识片段</li>
+<li>长短期记忆</li>
+<li>当前任务状态</li>
+</ul>
+<p>那么如何才能有效的组织这些信息呢？还是机械的将它们填充进来吗？肯定不是。</p>
+<h3 id="2-1-RAG：解决「模型不知道的私有知识库」"><a href="#2-1-RAG：解决「模型不知道的私有知识库」" class="headerlink" title="2.1 RAG：解决「模型不知道的私有知识库」"></a>2.1 RAG：解决「模型不知道的私有知识库」</h3><p>私域知识、产品文档、内部规范、历史记录，往往比上下文窗口大得多，不能整包塞给模型。这时候就需要先查，再把最相关的片段喂进去。</p>
+<p>RAG 的价值在于：它尽量让检索结果和任务语义相关，而不是只做字面匹配。比如同样搜索「苹果」，一斤苹果 5 块钱和一部苹果手机 8000 块都可能命中，但对当前任务有帮助的内容其实完全不同。</p>
+<p>不过，RAG 的发展也是波折的，中间火热的时候，说「RAG for everything」，模型上下文窗口一长，微调技术成熟的时候，又说「RAG is dead」。在实际的企业知识问答实践中，RAG 也总会遇到各种问题被抱怨。</p>
+<p>但从我的观察来看：</p>
+<ul>
+<li>在企业知识问答、流程文档检索、内部规范辅助这类场景里，RAG 仍然很重要</li>
+<li>在代码仓库导航、局部文件定位这类强结构化场景里，Grep、Glob、Read 这类直接操作文件系统的方式，往往比向量检索更直接</li>
+</ul>
+<p>不是 RAG 消失了，而是不同任务需要不同的增强方式。</p>
+<p>我自己做 debug agent 时就踩过这个坑。我最初尝试过把代码仓库做索引，再让 Agent 通过语义检索去找崩溃相关代码，结果召回率很低。原因是很多调试任务依赖的不是「语义相似」，而是术语、符号名、文件路径、调用链和历史改动，这些信息更适合用 grep、日志关键字和 git 记录去逼近。后来直接调用 claude code sdk，准确率一下就上去了。</p>
+<h3 id="2-2-Tools：解决「模型不知道外部世界，也不能直接行动」"><a href="#2-2-Tools：解决「模型不知道外部世界，也不能直接行动」" class="headerlink" title="2.2 Tools：解决「模型不知道外部世界，也不能直接行动」"></a>2.2 Tools：解决「模型不知道外部世界，也不能直接行动」</h3><p>如果没有工具，LLM 很像一个「缸中之脑」。它能推理，但不知道现在几点，不知道今天发生了什么，也不能亲手执行动作。</p>
+<p>所以我们给模型接工具：</p>
+<ul>
+<li>要知道时间，就接时间工具</li>
+<li>要知道现实世界信息，就接搜索或接口</li>
+<li>要改文件、跑命令、查日志，就接代码与系统工具</li>
+</ul>
+<p>这条路线持续在进化。早期很多系统靠正则匹配模型输出，再映射到某个函数；后来发展到更稳定的 function calling；再往后，为了把工具能力从某个模型服务或某个聊天客户端里解耦出来，又出现了像 MCP 这类协议层抽象。</p>
+<p>工具一多，新的问题又来了：工具描述本身会占上下文，选择错误的工具也会带来执行成本。所以现在不少系统开始做按需加载，把工具和经验封装成 skills，避免一上来把所有能力都塞给模型。</p>
+<h3 id="2-3-Memory：解决「模型每次都像第一次见你」"><a href="#2-3-Memory：解决「模型每次都像第一次见你」" class="headerlink" title="2.3 Memory：解决「模型每次都像第一次见你」"></a>2.3 Memory：解决「模型每次都像第一次见你」</h3><p>LLM 天生不是持续有状态的。当前轮次的推理，不会自动继承上一次对话的内部状态。</p>
+<p>最简单的做法，就是把之前的对话一起放回上下文。这确实有效，而且现在依然是最常见的办法。但对话一长，窗口就会被迅速吃满，于是我们又不得不面对两个更细的问题：</p>
+<ul>
+<li>哪些历史信息应该保留</li>
+<li>哪些信息应该压缩、摘要或者外置存储</li>
+</ul>
+<p>短期记忆解决连续对话，长期记忆解决跨任务偏好、固定约束和��史决策。到这里，会发现 Context Engineering 已经不是「多加几个字段」，而是在做信息编排。</p>
+<h3 id="2-4-为什么只补上下文，很多-Agent-还是做不稳"><a href="#2-4-为什么只补上下文，很多-Agent-还是做不稳" class="headerlink" title="2.4 为什么只补上下文，很多 Agent 还是做不稳"></a>2.4 为什么只补上下文，很多 Agent 还是做不稳</h3><p>上下文问题解决的是「模型看到什么」，但它不直接解决下面这些问题：</p>
+<ul>
+<li>它会不会误用高风险工具</li>
+<li>它改完代码以后如何验证</li>
+<li>它失败了以后如何重试或回滚</li>
+<li>它什么时候应该停下来汇报，而不是继续乱做</li>
+<li>它怎样在长任务里留下可以追溯的过程记录</li>
+</ul>
+<p>这些问题一出来，视角就必须继续外扩。我们研究的不再只是上下文，而是整个运行系统。这就是我理解的 Harness Engineering。</p>
+<h2 id="3-Harness-Engineering：把模型放进一个可运行、可纠错、可追溯的系统"><a href="#3-Harness-Engineering：把模型放进一个可运行、可纠错、可追溯的系统" class="headerlink" title="3. Harness Engineering：把模型放进一个可运行、可纠错、可追溯的系统"></a>3. Harness Engineering：把模型放进一个可运行、可纠错、可追溯的系统</h2><p>如何理解 harness，我想到一个合适的例子。一个新入职的经验丰富的工程师，我们需要怎样才能保证它的产出呢？</p>
+<ul>
+<li>给他配好的电脑</li>
+<li>告诉他规则和权利</li>
+<li>给它工作用的软件和运行环境</li>
+<li>告诉它本领域的知识</li>
+</ul>
+<p>同理，如果把一个能力不错的 Agent 看作新入职的工程师，那么 prompt 只是任务说明，context 只是你递给他的材料，而 <strong>harness 更像他所处的工作环境</strong>。</p>
+<p>真正决定他能不能稳定交付的，通常不是「会不会写代码」这一件事，而是下面这些工程条件是否存在：</p>
+<ul>
+<li>有没有明确的目标、边界和停止条件</li>
+<li>有没有合适的权限和运行环境</li>
+<li>有没有足够的领域知识和工具入口</li>
+<li>有没有日志、测试、页面反馈这类可观测信号</li>
+<li>有没有文档、记录和版本系统让它在长任务里不至于失忆</li>
+</ul>
+<p>所以，Harness Engineering 是在回答一个问题：<strong>如何把模型放进一个能持续做事的工程闭环环境里。</strong></p>
+<h3 id="3-1-确定任务目标"><a href="#3-1-确定任务目标" class="headerlink" title="3.1 确定任务目标"></a>3.1 确定任务目标</h3><p>很多 Agent 失控，不是因为它听不懂，而是因为系统没有给它清晰的「完成条件」和「禁止动作」。</p>
+<p>比如在代码任务里，至少要让它知道：</p>
+<ul>
+<li>什么叫完成</li>
+<li>哪些目录、分支、环境不能碰</li>
+<li>失败后是继续尝试、回退，还是停下来请求确认</li>
+<li>什么时候必须先汇报，再进入下一步</li>
+</ul>
+<p>这类约束看起来不像 AI 技术，实际上却直接决定产出质量。因为 Agent 一旦进入多步执行，没有约束的系统，天然更容易出现过度行动。这和对待人类程序员是一样的。</p>
+<h3 id="3-2-暴露隐性知识，而不是默认模型自己会懂"><a href="#3-2-暴露隐性知识，而不是默认模型自己会懂" class="headerlink" title="3.2 暴露隐性知识，而不是默认模型自己会懂"></a>3.2 暴露隐性知识，而不是默认模型自己会懂</h3><p>实践里，coding agent 最常见的跑偏原因，是它不知道团队那些「默认不言自明」的规则导致的。</p>
+<p>比如「做一个上新的功能」，在人类团队里可能隐含了很多前置约束：</p>
+<ul>
+<li>哪些指标必须埋点</li>
+<li>哪些埋点字段有历史兼容要求</li>
+<li>哪些 UI 改动要同步改文案和活动配置</li>
+<li>哪个目录下的脚本才是正式发布链路</li>
+</ul>
+<p>这些信息的密度非常高，如果没有清晰的呈现出来，agent 的幻觉就会将其放大。</p>
+<p>所以我更愿意把这件事理解成：<strong>不要只给 Agent 一个需求，而要补给它「一个新人第一周会被老员工口头交代的那些东西」。</strong></p>
+<h3 id="3-3-给足够但不过载的工具"><a href="#3-3-给足够但不过载的工具" class="headerlink" title="3.3 给足够但不过载的工具"></a>3.3 给足够但不过载的工具</h3><p>工具越多不是越好，太多工具会带来两个副作用：</p>
+<ul>
+<li>模型选择成本变高</li>
+<li>工具说明本身开始挤占上下文</li>
+</ul>
+<p>所以更合理的做法，往往不是「无限加工具」，而是让工具可发现、可按需加载。很多优秀的 coding agent 其实都不追求「为每个动作发明一个专用工具」，而是优先提供一小组通用能力，例如：</p>
+<ul>
+<li>Read</li>
+<li>Write</li>
+<li>Grep</li>
+<li>Glob</li>
+<li>Bash</li>
+</ul>
+<p>典型的如 Claude Code、pi-mono。这套设计的好处，是看似给了很少的工具，但实际覆盖面很大。前四个让它高效操作代码和文件，Bash 则提供兜底能力。剩下的空间，交给具体项目里的 CLI、脚本和工作流。</p>
+<p>隐含的逻辑是「我相信 Agent 足够的智能，可以找到自己合适的工具」。</p>
+<h3 id="3-4-提供可观测的反馈回路"><a href="#3-4-提供可观测的反馈回路" class="headerlink" title="3.4 提供可观测的反馈回路"></a>3.4 提供可观测的反馈回路</h3><p>没有反馈，Agent 就很难自我纠错。它做了一步动作，却不知道结果好坏，下一步只能继续猜。</p>
+<p>在软件开发里，最典型的反馈源包括：</p>
+<ul>
+<li>测试结果</li>
+<li>lint 和类型检查（很多 coding agent 工具会搭 LSP）</li>
+<li>结构化日志</li>
+<li>页面或接口的真实运行输出</li>
+<li>调试信息、浏览器行为、硬件或串口回传</li>
+</ul>
+<p>很多人觉得 Agent 输出质量差，第一反应是继续改 prompt 尝试。可如果系统根本没有把这些反馈暴露出来，再好的 prompt 也无法替代观测能力。一个不会看结果的 Agent，很难进入稳定迭代。</p>
+<p>从另一个层面说，这也是某些岗位的壁垒所在。越是依赖真实世界给予反馈的，越晚被替代。比如嵌入式开发，需要通过调试器等将信号接回到 agent 系统。反之则越快被替代，今年已经开始出现前端部门被整锅端掉了。</p>
+<h3 id="3-5-提供渐进式披露的记录系统"><a href="#3-5-提供渐进式披露的记录系统" class="headerlink" title="3.5 提供渐进式披露的记录系统"></a>3.5 提供渐进式披露的记录系统</h3><p>上下文窗口很宝贵，但长程任务天然需要大量记录。人类做项目时也不是把全部细节背在脑子里，而是把信息外化到文档、代码、日志和版本历史里，需要时再检索回来。</p>
+<p>Agent 也一样。好的记录系统，不是把百科全书塞进 AGENTS.md，而是给它一张地图，再把细节拆到真正可维护的位置：</p>
+<ul>
+<li><code>AGENTS.md</code> 负责告诉它规则、入口和知识分布</li>
+<li><code>docs/</code> 负责沉淀领域文档、流程说明、排障记录</li>
+<li><code>git</code> 负责保存每一步代码变化和提交语义</li>
+</ul>
+<p>这样做有两个直接好处：</p>
+<ul>
+<li>上下文不需要永久背着所有细节</li>
+<li>需要追溯时，可以沿着文档和版本历史反查</li>
+</ul>
+<p>从这个角度看，<strong>git 本身就是很适合 Agent 的外部记忆</strong>。它天然和代码关联，又鼓励小步迭代，检索成本也低。</p>
+<p>这块经验来自 OpenAI 在 2026 年 2 月 11 日发布的文章《工程技术：在智能体优先的世界中利用 Codex》，他们后来不再把 AGENTS.md 当百科全书，而是把它当作内容目录，真正的知识沉淀在结构化的 <code>docs/</code> 里。这个判断和我自己的实践是一致的：长任务需要的是可检索的记录系统，而不是一段越来越长的总提示词。</p>
+<p>我在做一个语音 agent vixio 工程时，对「记录系统」还有一个更强的感受：如果不强制 Agent 把关键决策写下来，长任务一定会越来越漂。</p>
+<p>我的做法是：</p>
+<ul>
+<li>每次开始实现前，先要求 Agent 完成设计并存到文档里</li>
+<li>后续实现一旦有更新，必须同步更新这份设计文档</li>
+<li>后面遇到关联任务时，要求 Agent 先回看并引用这份文档，再继续实现</li>
+</ul>
+<p>回想起来，这件事看起来像文档习惯，实际上是 harness 的一部分。因为它解决的不是「当前回答得好不好」，而是「多轮、多阶段任务里，Agent 能不能保留稳定的项目记忆」。</p>
+<p>长期任务里的记忆，不能只寄希望于上下文窗口自动维持，而要外置到文档、git、任务记录这些系统里。窗口里放的是当前阶段最相关的片段，真正的长期记忆应该在窗口外有可检索的落点。</p>
+<h2 id="4-回想我在做-Debug-Agent-时的经验"><a href="#4-回想我在做-Debug-Agent-时的经验" class="headerlink" title="4. 回想我在做 Debug Agent 时的经验"></a>4. 回想我在做 Debug Agent 时的经验</h2><h3 id="4-1-第一版：只有-prompt、问题描述、日志和仓库"><a href="#4-1-第一版：只有-prompt、问题描述、日志和仓库" class="headerlink" title="4.1 第一版：只有 prompt、问题描述、日志和仓库"></a>4.1 第一版：只有 prompt、问题描述、日志和仓库</h3><p>一般解决一个 BUG，都是如下的步骤，给出任务要求：</p>
+<blockquote>
+<p>解决这个崩溃问题。</p>
+</blockquote>
+<p>然后补上三类材料：</p>
+<ol>
+<li>问题描述</li>
+<li>崩溃日志</li>
+<li>代码仓库</li>
+</ol>
+<p>从「信息已经不少」的角度看，这似乎已经够了。但实际效果很差。Agent 会执行很久，读很多文件，尝试很多方向，却很难稳定定位到真正相关的代码段。它不是完全不能做事，而是一直在低效搜索。最主要的问题在于：<strong>不稳定</strong>。能不能找到问题点所在，完全看运气。最典型的就是，找崩溃问题，找到 memory 空指针，然后就围绕着这个空指针一直去自我证明。实际上，这里不会空指针，只是写法没有那么规范，导致它容易误判。</p>
+<p>这时候如果只从 Prompt Engineering 的角度思考，很容易得出一个错误结论：是不是 prompt 还不够细？</p>
+<h3 id="4-2-我当时的误判：先去做代码-RAG"><a href="#4-2-我当时的误判：先去做代码-RAG" class="headerlink" title="4.2 我当时的误判：先去做代码 RAG"></a>4.2 我当时的误判：先去做代码 RAG</h3><p>我第一反应其实不是做 harness，而是继续补 context。我试过把代码做索引，让 Agent 通过语义检索找与崩溃相关的代码。</p>
+<p>这一步没有带来预期收益，核心问题是<strong>召回率很低</strong>。</p>
+<p>调试类任务和知识问答不太一样。很多关键线索并不体现为自然语言语义相近，而体现为：</p>
+<ul>
+<li>崩溃堆栈里的特定符号</li>
+<li>日志中的关键字</li>
+<li>仓库里的历史术语</li>
+<li>某次改动引入的调用链变化</li>
+</ul>
+<p>也就是说，这个问题表面上像「信息不够」，本质上却是「信息组织方式不对」。代码语义检索在这里不是完全没用，但不是最有效的入口。</p>
+<h3 id="4-3-真正起作用的改动：给它一个崩溃分析技能"><a href="#4-3-真正起作用的改动：给它一个崩溃分析技能" class="headerlink" title="4.3 真正起作用的改动：给它一个崩溃分析技能"></a>4.3 真正起作用的改动：给它一个崩溃分析技能</h3><p>后面效果明显改善，是因为我不再继续堆 prompt，而是补了一套更接近工程经验的运行支架。</p>
+<p>我给 Agent 增加了一个「崩溃分析技能」，里面不是抽象原则，而是非常具体的工作方法：</p>
+<ul>
+<li>遇到这类崩溃，先搜哪些关键字</li>
+<li>应该优先调用电脑上的哪个分析工具</li>
+<li>可以参考一份过去解决过的类似问题分析</li>
+<li>遇到术语不理解时，要通过 git 记录理解术语含义，并反查对应代码段</li>
+</ul>
+<p>这次改动以后，执行效果就明显好了很多。因为 Agent 不再是在整个仓库里盲目游走，而是开始沿着一条更像资深工程师排障的路径推进。</p>
+<p>这件事对我最大的提醒是：<strong>很多时候，Agent 缺的不是「再解释一遍任务」，而是「给它一条可执行的调查路径」。</strong></p>
+<h3 id="4-4-这个案例里，三层分别发挥了什么作用"><a href="#4-4-这个案例里，三层分别发挥了什么作用" class="headerlink" title="4.4 这个案例里，三层分别发挥了什么作用"></a>4.4 这个案例里，三层分别发挥了什么作用</h3><p>如果用本文的三层框架回看这次调试过程，大概可以这样归因：</p>
+<ul>
+<li><strong>Prompt</strong> 负责定义目标，比如「解决这个崩溃问题」</li>
+<li><strong>Context</strong> 负责提供材料，比如日志、代码仓库、过去案例和关键字</li>
+<li><strong>Harness</strong> 负责把排查流程固定下来，让它知道先做什么、用什么工具、如何通过 git 和记忆系统持续逼近答案</li>
+</ul>
+<p>实际上，它能成功运行分析工具，也是我实现准备好了运行环境。也正因为这样，我现在对很多 Agent 失败场景的第一反应，已经不是「把 prompt 再写长一点」，而是先问一句：<strong>它到底缺的是目标表达、任务材料，还是工程支架？</strong></p>
+<h2 id="总结：Agent-时代，重心在「Harness」"><a href="#总结：Agent-时代，重心在「Harness」" class="headerlink" title="总结：Agent 时代，重心在「Harness」"></a>总结：Agent 时代，重心在「Harness」</h2><p>Prompt Engineering 解决的是如何把任务说明白，Context Engineering 解决的是如何把关键信息摆到模型眼前，Harness Engineering 解决的是如何让模型在真实环境里稳定做事。</p>
+<p>三者并不是谁取代谁，而是抽象层次一层层向外扩展。任务越接近真实生产，后两者的重要性就越高。</p>
+<p>模型能力越来越强，它所需要更多的可能是「给他一个自由发挥的舞台」，人类需要来协助它搭建舞台。而不是反过来，人类强烈的干预它的行为，却不给予它帮助。</p>
+<p>如果你用了顶级模型，但 vibe coding 效果不好，大概率不是模型不够聪明，而是还没有给模型提供足够好的运行环境，从而充分发挥它的能力。</p>
+<hr>
+<p>参考：</p>
+<ul>
+<li><a href="https://openai.com/zh-Hans-CN/index/harness-engineering/">Harness engineering: leveraging Codex in an agent-first world - OpenAI</a></li>
+</ul>
+<p>转载自知乎：<a href="https://zhuanlan.zhihu.com/p/2015142041282163260">https://zhuanlan.zhihu.com/p/2015142041282163260</a></p>
+]]></content>
+      <categories>
+        <category>VibeCoding方法论</category>
+      </categories>
+      <tags>
+        <tag>AI Coding</tag>
+        <tag>Harness Engineering</tag>
+        <tag>Context Engineering</tag>
+        <tag>Prompt Engineering</tag>
+        <tag>软件工程</tag>
+        <tag>开发方法论</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>用 Skills 打通 Bug 分析流水线：5 个 Skill 的设计与串联</title>
+    <url>/2026/04/28/claude-code-skills-bug-analysis-workflow/</url>
+    <content><![CDATA[<h2 id="从一个反直觉的设计说起"><a href="#从一个反直觉的设计说起" class="headerlink" title="从一个反直觉的设计说起"></a>从一个反直觉的设计说起</h2><p>Skill本质上就是一个放在 <code>~/.claude/skills/&lt;name&gt;/SKILL.md</code> 或者<code>~/.codex/skills/&lt;name&gt;/SKILL.md</code> 里的 Markdown 文件。没有特殊 API，没有插件机制，加载后直接注入进 system prompt。</p>
+<p>这听起来挺简陋的。但实际用下来，发现它反而是最合适的抽象方式.因为真正让 AI 变强的不是给它更多工具，而是给它”领域知识”：这个系统的坑在哪、字段含义是什么、什么情况下该停下来问人。这些东西写成自然语言比写成代码更容易维护。</p>
+<p>目前团队内使用的 Bug 分析体系有 5 个相互依赖的 Skills，下面从实现层面把它们拆开讲。</p>
+<span id="more"></span>
+
+<hr>
+<h2 id="两种-Bug-来源，两条完全不同的链路"><a href="#两种-Bug-来源，两条完全不同的链路" class="headerlink" title="两种 Bug 来源，两条完全不同的链路"></a>两种 Bug 来源，两条完全不同的链路</h2><p>先把场景说清楚，因为这决定了整个架构。</p>
+<p><strong>第一种：公司内部测试人员在 JIRA 上提的 Bug。</strong> 测试同学测出问题，手动创建 JIRA Issue，把日志压缩包、截图、视频作为附件上传上去。日志存在 JIRA 附件里，鉴权靠 JIRA 的 Personal Access Token。</p>
+<p><strong>第二种：真实用户通过 App 的意见反馈功能主动上报。</strong> 用户在 App 里点”意见反馈”，App 自动打包当时的系统日志一起上传。这份日志不走 JIRA，走的是另一套内部平台——AISP Community CMS，日志文件存在百度 BOS 上。</p>
+<p>两个来源，两套鉴权，两种定位方式。对应两条链路：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">链路 A（JIRA）：</span><br><span class="line">  测试提 JIRA → 开发者拿 JIRA Key → jira-bug-analysis → jira-integration</span><br><span class="line">  → 下载附件 → 分析</span><br><span class="line"></span><br><span class="line">链路 B（用户意见反馈）：</span><br><span class="line">  用户提交反馈 → 日志上传到 BOS</span><br><span class="line">  → 开发者拿 accountId → lisa-query-feedback → 拿到 fileKey</span><br><span class="line">  → lisa-log-download → ois-download → SIADA MCP → BOS 下载日志 → 分析</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="Skill-1：ois-download-—-有-OIS-鉴权能力的-BOS-下载工具"><a href="#Skill-1：ois-download-—-有-OIS-鉴权能力的-BOS-下载工具" class="headerlink" title="Skill 1：ois-download — 有 OIS 鉴权能力的 BOS 下载工具"></a>Skill 1：ois-download — 有 OIS 鉴权能力的 BOS 下载工具</h2><p>这个 Skill 干的事很直接：给一个 <code>fileKey</code>，把文件从百度 BOS 下回来。日志压缩包、截图、任何存在 BOS 上的文件都能用它下。</p>
+<p>复杂的地方不在下载本身，而在鉴权。BOS 是私有存储，不能直接访问，必须先拿到合法凭证才能下载。这个 Skill 通过 OIS 解决了鉴权问题，所以叫”有 OIS 鉴权能力的 BOS 下载工具”。</p>
+<p>OIS（Object Integrated Storage）是公司内部云服务部门提供的对象存储接入服务，统一封装了百度云、阿里云、火山云等公有云的对象存储，对外提供统一的访问入口。使用方有两条路：一是直接用 OIS 的 SDK；二是调 OIS 的 HTTP 接口拿临时 AK&#x2F;SK（Access Key &#x2F; Secret Key，即临时访问密钥对），再用各家公有云的原生 SDK 操作。</p>
+<p>这个 Skill 走的是第二条路：给你一个 <code>fileKey</code>，通过 OIS 接口拿到访问百度 BOS 的临时凭证，再用百度云原生 SDK 生成预签名 URL 完成下载。正因为用到了百度云 SDK，首次使用前需要先安装依赖：</p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">pip3 install baidubce</span><br></pre></td></tr></table></figure>
+
+<p>Skill 里的 <code>check_dependencies.sh</code> 会自动检测并安装，但如果网络受限或环境有问题，也可以手动跑这一步。</p>
+<p>看起来很简单，实际上绕了好几道弯。</p>
+<h3 id="为什么不能直接-curl"><a href="#为什么不能直接-curl" class="headerlink" title="为什么不能直接 curl"></a>为什么不能直接 curl</h3><p>日志文件存在百度 BOS 的私有 bucket 里，直接访问需要鉴权。正常的做法是维护一个长期 Access Key，但这有两个问题：一是 Key 一旦泄露影响面很大；二是不同角色的人对文件的访问权限应该不同，用一把长期 Key 很难做细粒度控制。</p>
+<p>所以这里走 OIS 的 STS 临时授权方案：不持有任何长期凭证，每次下载时现去 OIS 申请一组只有 3600 秒有效期的临时 AK&#x2F;SK + SecurityToken，用它生成一个带签名的一次性下载 URL，下完即过期。整个过程 Skill 本地不存任何 secret，权限控制交给 OIS 统一管理。</p>
+<p>这套流程背后还有一个好处：因为走了 OIS 这层统一入口，底层换成阿里云或火山云对上层完全透明，Skill 代码不需要改。</p>
+<h3 id="SIADA-MCP-的协议细节"><a href="#SIADA-MCP-的协议细节" class="headerlink" title="SIADA MCP 的协议细节"></a>SIADA MCP 的协议细节</h3><p>OIS 申请 STS 凭证的接口不是普通的 REST API，而是通过 SIADA MCP 服务暴露的——这是公司内部 AI 平台统一对外提供工具调用的方式，接口协议遵循 MCP（Model Context Protocol）标准。所以 Skill 脚本里不是简单地 <code>curl</code> 一个 REST 接口，而是要按 MCP 协议走完整的会话流程。</p>
+<p>具体有一个容易踩坑的地方：每次调用前必须先发一个 <code>initialize</code> 握手请求，然后才能发 <code>tools/call</code>，两个请求打到同一个 endpoint。</p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="comment"># Step 1: initialize（像 WebSocket 握手一样）</span></span><br><span class="line">curl -X POST <span class="string">&quot;https://siada.lixiang.com/mcp&quot;</span> \</span><br><span class="line">  -H <span class="string">&quot;Authorization: Bearer <span class="variable">$SIADA_API_KEY</span>&quot;</span> \</span><br><span class="line">  -d <span class="string">&#x27;&#123;</span></span><br><span class="line"><span class="string">    &quot;jsonrpc&quot;: &quot;2.0&quot;, &quot;id&quot;: 1, &quot;method&quot;: &quot;initialize&quot;,</span></span><br><span class="line"><span class="string">    &quot;params&quot;: &#123;</span></span><br><span class="line"><span class="string">      &quot;protocolVersion&quot;: &quot;2024-11-05&quot;,</span></span><br><span class="line"><span class="string">      &quot;clientInfo&quot;: &#123;&quot;name&quot;: &quot;openclaw&quot;, &quot;version&quot;: &quot;1.0.0&quot;&#125;</span></span><br><span class="line"><span class="string">    &#125;</span></span><br><span class="line"><span class="string">  &#125;&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># Step 2: 调 getOisAuth 工具</span></span><br><span class="line">curl -X POST <span class="string">&quot;https://siada.lixiang.com/mcp&quot;</span> \</span><br><span class="line">  -H <span class="string">&quot;Authorization: Bearer <span class="variable">$SIADA_API_KEY</span>&quot;</span> \</span><br><span class="line">  -d <span class="string">&#x27;&#123;</span></span><br><span class="line"><span class="string">    &quot;jsonrpc&quot;: &quot;2.0&quot;, &quot;id&quot;: 2, &quot;method&quot;: &quot;tools/call&quot;,</span></span><br><span class="line"><span class="string">    &quot;params&quot;: &#123;</span></span><br><span class="line"><span class="string">      &quot;name&quot;: &quot;1815568242626891830&quot;,</span></span><br><span class="line"><span class="string">      &quot;arguments&quot;: &#123;</span></span><br><span class="line"><span class="string">        &quot;appId&quot;: &quot;com.lixiang.crs.question.file.limate&quot;,</span></span><br><span class="line"><span class="string">        &quot;fileKey&quot;: &quot;&lt;your-fileKey&gt;&quot;,</span></span><br><span class="line"><span class="string">        &quot;identify&quot;: &quot;remote-control&quot;,</span></span><br><span class="line"><span class="string">        &quot;durationSeconds&quot;: 3600</span></span><br><span class="line"><span class="string">      &#125;</span></span><br><span class="line"><span class="string">    &#125;</span></span><br><span class="line"><span class="string">  &#125;&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<p>返回的 JSON 是<strong>两层嵌套</strong>的：外层是 MCP 协议层（<code>result.content[0].text</code>），里面才是真正的业务 JSON。解析时要先取 <code>.result.content[0].text</code>，再对这个字符串做第二次 <code>jq</code> 解析，才能拿到 <code>accessKeyId</code>、<code>accessKeySecret</code>、<code>securityToken</code>。</p>
+<p>拿到 STS 凭证之后，交给 Python 的 <code>baidubce</code> SDK 生成预签名 URL。这里有个隐蔽的坑：<code>baidubce</code> 的 <code>generate_pre_signed_url</code> 返回的是 <code>bytes</code> 类型，不是 <code>str</code>，如果直接打印会得到 <code>b&#39;https://...&#39;</code> 这样带前缀的字符串。<code>generate_url.py</code> 里做了显式的 decode：</p>
+<figure class="highlight python"><table><tr><td class="code"><pre><span class="line">url = bos_client.generate_pre_signed_url(bucket_name=..., key=..., expiration_in_seconds=-<span class="number">1</span>)</span><br><span class="line"><span class="keyword">if</span> <span class="built_in">isinstance</span>(url, <span class="built_in">bytes</span>):</span><br><span class="line">    url = url.decode(<span class="string">&#x27;utf-8&#x27;</span>)</span><br><span class="line"><span class="built_in">print</span>(url)</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="Skill-2：lisa-query-feedback-—-从用户-accountId-找到日志的-fileKey"><a href="#Skill-2：lisa-query-feedback-—-从用户-accountId-找到日志的-fileKey" class="headerlink" title="Skill 2：lisa-query-feedback — 从用户 accountId 找到日志的 fileKey"></a>Skill 2：lisa-query-feedback — 从用户 accountId 找到日志的 fileKey</h2><p>这个 Skill 干的事只有一件：给一个用户 <code>accountId</code>，查出他在 App 里提交的所有意见反馈记录，每条记录里有 <code>fileKey</code>，指向 BOS 上对应的日志文件。</p>
+<p>为什么需要单独一个 Skill 做这件事？因为用户上报的日志不在 JIRA 里，而是存在公司内部的意见反馈平台。开发者要分析用户反馈的问题，必须先来这里找到日志的 <code>fileKey</code>，才能交给 <code>lisa-log-download</code> 去下载。没有这一步，根本不知道日志在哪。</p>
+<p>运作方式很简单：给一个 <code>accountId</code>，Skill 调内网的意见反馈平台接口，拉出这个用户提交的所有反馈记录，整理成表格输出——每条记录包含提交时间、App 版本、反馈内容摘要，以及最关键的 <code>fileKey</code>。拿到 <code>fileKey</code> 之后直接交给下一个 Skill 去下载日志。</p>
+<p>具体流程：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">1. 开发者提供用户 accountId（从 JIRA 描述、用户投诉记录等渠道获取）</span><br><span class="line">   ↓</span><br><span class="line">2. Skill 请求内网意见反馈平台接口（需要内网或 VPN）</span><br><span class="line">   ↓</span><br><span class="line">3. 输出该用户的反馈记录表格：</span><br><span class="line">   提交时间 | App 版本 | 系统 | 反馈内容摘要 | 是否有日志附件</span><br><span class="line">   ↓</span><br><span class="line">4. 单独列出所有携带日志的条目及其 fileKey</span><br><span class="line">   ↓</span><br><span class="line">5. 把 fileKey 交给 lisa-log-download 下载日志</span><br></pre></td></tr></table></figure>
+
+<p>值得一提的是，眼镜固件日志也走这条路。用户反馈眼镜问题时，眼镜日志同样通过 Lisa App 上传到意见反馈平台，查询方式和手机日志完全一致，不需要特殊处理。</p>
+<hr>
+<h2 id="Skill-3：lisa-log-download-—-把日志下回来、解压好，准备供分析"><a href="#Skill-3：lisa-log-download-—-把日志下回来、解压好，准备供分析" class="headerlink" title="Skill 3：lisa-log-download — 把日志下回来、解压好，准备供分析"></a>Skill 3：lisa-log-download — 把日志下回来、解压好，准备供分析</h2><p>这个 Skill 的定位是：拿到 <code>fileKey</code> 之后，把 BOS 上的日志文件下回来、解压、整理成可以直接读的目录结构。它是 <code>ois-download</code> 的上层封装，补充了两个 <code>ois-download</code> 没有的能力：一是”不知道 fileKey 时先查”，二是下载后自动解压处理。</p>
+<p>为什么要单独抽这一层？因为实际使用中经常遇到”只知道用户 accountId，不知道具体哪个日志文件”的情况——<code>lisa-query-feedback</code> 拿到的是反馈记录，<code>ois-download</code> 只负责下载，中间的”查日志记录拿 fileKey”这步需要有人做，就是这个 Skill。</p>
+<p><strong>模式一：已知 fileKey，直接下载。</strong> 调 <code>download-by-ois.sh</code>，走 SIADA MCP → BOS 链路把文件拉回来，自动解压。</p>
+<p><strong>模式二：不知道 fileKey，先查。</strong> 调 <code>query-logs.sh</code>，走另一个 SIADA MCP 工具（tool ID <code>1823985084370276360</code>，用 entityCode <code>com.lixiang.crs.question.file.limate</code> 做过滤），拿到日志记录列表，再从里面取 fileKey 去下载。</p>
+<p>两个 SIADA MCP 工具 ID 不一样，但协议是一样的：initialize → tools&#x2F;call → 解析两层 JSON。</p>
+<h3 id="解压后的目录结构"><a href="#解压后的目录结构" class="headerlink" title="解压后的目录结构"></a>解压后的目录结构</h3><p>iOS App 日志解压后大概是这样：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">extracted_UUID_xxx.zip.z/</span><br><span class="line">  logs/</span><br><span class="line">    2026-03-27 10:44:23:732.log    # 主日志（时间戳精确到毫秒）</span><br><span class="line">    rtc/logs/agora/                # Agora RTC SDK 的日志</span><br><span class="line">    bstLog/                        # BST 视频/图像处理 SDK 的日志</span><br></pre></td></tr></table></figure>
+
+<p>Android 日志和 iOS 日志目录结构不一样，对照源码的路径也不一样：iOS 对应 <code>lisa-ios/</code>，Android 对应 <code>lisa-android/</code>，眼镜日志对应 <code>embedded-gtk/embedded-gtk/</code>。涉及 BLE 连接、WiFi 传输、音频流的日志需要同时查 <code>sslink-sdk/</code>，因为这是 iOS 和 Android 共用的通信库。</p>
+<h3 id="眼镜日志的时间戳换算"><a href="#眼镜日志的时间戳换算" class="headerlink" title="眼镜日志的时间戳换算"></a>眼镜日志的时间戳换算</h3><p>眼镜固件日志（<code>sys_log/glasses_*.log</code>）有个特殊之处：日志里的时间是设备启动后的毫秒数，不是 UTC：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">1/  868/I/NONE  /   4 | HARDWARE STATS: Started with interval 10000 ms</span><br></pre></td></tr></table></figure>
+
+<p>第一个字段是序号，第二个 <code>868</code> 是启动后 868 毫秒。这个时间没法直接和手机日志对齐。</p>
+<p>但日志里会定期出现 <code>[UA]</code> 锚点行，携带真实的 UTC 时间：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">0310/  10383/I/main | [UA] 2026-03-28 00:54:20 [FIRMWARE_VERSION] LIG_b8da0718@...</span><br></pre></td></tr></table></figure>
+
+<p>有了这个锚点就能反推任意一行的绝对时间：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">absolute_time = anchor_utc + (line_ms - anchor_ms) / 1000</span><br></pre></td></tr></table></figure>
+
+<p>比如一行日志在 <code>868ms</code>，最近的锚点是 <code>10383ms → 00:54:20</code>，那这行的时间就是 <code>00:54:20 - (10383 - 868) / 1000 = 00:54:10.485</code>。</p>
+<p>分析跨端 Bug 时（App + 眼镜同时出问题），把两份日志的时间对齐是第一步，缺了这个换算公式就没法做。</p>
+<h3 id="下载文件的清理规则"><a href="#下载文件的清理规则" class="headerlink" title="下载文件的清理规则"></a>下载文件的清理规则</h3><p>日志文件默认落到 <code>/tmp/lisa_logs/</code>，解压成功后原始的 <code>.zip.z</code> 文件立刻删掉，解压目录保留 7 天，超过 7 天的目录在下次下载时顺手清掉：</p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">find <span class="string">&quot;<span class="variable">$OUTPUT_DIR</span>&quot;</span> -mindepth 1 -maxdepth 1 -mtime +7 -<span class="built_in">exec</span> <span class="built_in">rm</span> -rf &#123;&#125; +</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="Skill-4：jira-integration-—-JIRA-操作的统一基础层"><a href="#Skill-4：jira-integration-—-JIRA-操作的统一基础层" class="headerlink" title="Skill 4：jira-integration — JIRA 操作的统一基础层"></a>Skill 4：jira-integration — JIRA 操作的统一基础层</h2><p>这个 Skill 是其他所有需要访问 JIRA 的 Skill 的共同底座：统一管理凭证、提供标准化的 API 封装，让上层 Skill 直接拿来用，不用各自处理鉴权细节。</p>
+<p>为什么要单独抽出来？如果每个 Skill 各自维护 JIRA 凭证和 API 调用逻辑，凭证分散在多处、API 用法也可能不一致。集中在一个地方，凭证只存 <code>~/.claude/settings.json</code> 一份，API 用法有统一的参考模板，改一处全部生效。</p>
+<p>凭证放在 <code>~/.claude/settings.json</code>：</p>
+<figure class="highlight json"><table><tr><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;plugins&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;jira-integration&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;baseUrl&quot;</span><span class="punctuation">:</span> <span class="string">&quot;https://jira.your-company.com&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;username&quot;</span><span class="punctuation">:</span> <span class="string">&quot;your-username&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;personalAccessToken&quot;</span><span class="punctuation">:</span> <span class="string">&quot;your-personal-access-token&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>Skill 里提供了一个 Python <code>JiraClient</code> 的完整实现，Claude 在需要访问 JIRA 时直接按这个模板写脚本，不用每次重新处理鉴权逻辑。</p>
+<p>用 PAT（Personal Access Token）而不是用户名密码，原因是现代 JIRA 推荐 Bearer Token 方式，Basic Auth 属于 legacy 方案，部分实例已经不支持。</p>
+<h3 id="状态变更的两步走"><a href="#状态变更的两步走" class="headerlink" title="状态变更的两步走"></a>状态变更的两步走</h3><p>JIRA 的状态迁移不能直接指定目标状态名，必须先拿到可用的 transition ID，再执行 transition。Skill 里强制要求两步走：</p>
+<figure class="highlight python"><table><tr><td class="code"><pre><span class="line"><span class="comment"># 第一步：查当前 issue 可以做哪些状态变更</span></span><br><span class="line">transitions = jira.get_transitions(<span class="string">&quot;LIG-6553&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 第二步：用对应的 transition ID 变更状态</span></span><br><span class="line">jira.transition_issue(<span class="string">&quot;LIG-6553&quot;</span>, transition_id=<span class="string">&quot;31&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>直接猜 transition ID 会踩坑，因为不同项目、不同工作流的 ID 完全不同。</p>
+<hr>
+<h2 id="Skill-5：jira-bug-analysis-—-整条流水线的唯一入口"><a href="#Skill-5：jira-bug-analysis-—-整条流水线的唯一入口" class="headerlink" title="Skill 5：jira-bug-analysis — 整条流水线的唯一入口"></a>Skill 5：jira-bug-analysis — 整条流水线的唯一入口</h2><p>这是整个体系的编排层，也是开发者唯一需要直接打交道的 Skill：给一个 JIRA Key，它把前面所有 Skill 串起来，从拉取 Bug 信息、下载附件、分析日志，到生成结构化报告，全部自动完成。</p>
+<p>为什么需要这一层？前面四个 Skill 各自解决一个具体问题，但 Bug 分析是一个有顺序依赖的多步流程，光有零件不够，还需要一个知道”先做什么、后做什么、什么时候该停下来问人”的编排者。这个 Skill 就是那个编排者。</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">分析 LIG-6553</span><br></pre></td></tr></table></figure>
+
+<h3 id="完整执行流程"><a href="#完整执行流程" class="headerlink" title="完整执行流程"></a>完整执行流程</h3><figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">1. [jira-integration] 拉取 issue 详情</span><br><span class="line">     → 标题、状态、指派人、描述、occurrenceTime、附件列表</span><br><span class="line"></span><br><span class="line">2. 下载全部附件</span><br><span class="line">     → curl -H &quot;Authorization: Bearer &lt;PAT&gt;&quot; &lt;attachment.content URL&gt;</span><br><span class="line"></span><br><span class="line">3. 识别附件类型</span><br><span class="line">     Android/...feedback-log.zip / .zip.z  → Android App 日志</span><br><span class="line">     ios/...*.zip / .zip.z                 → iOS App 日志</span><br><span class="line">     文件名含 glasses / glass_log           → 眼镜固件日志</span><br><span class="line">     *.png / *.jpg / *.jpeg                → 截图（Claude vision 直接读）</span><br><span class="line">     *.mp4 / *.mov / *.webm               → 视频（video-frames skill 提取关键帧）</span><br><span class="line"></span><br><span class="line">4. 确定 Bug 时间窗口</span><br><span class="line">     优先级：截图/视频上的系统时间 &gt; occurrenceTime（用户填的，可能有偏差）&gt; 日志起止时间</span><br><span class="line">     窗口 = [参考时间 - 10min, 参考时间 + 5min]</span><br><span class="line">     如果日志起止时间比窗口早/晚，要声明日志缺口</span><br><span class="line"></span><br><span class="line">5. 时间锚定根因分析</span><br><span class="line">     → 列出窗口内所有异常事件</span><br><span class="line">     → 逐一验证时间重合度</span><br><span class="line">     → 排除法收敛根因</span><br><span class="line"></span><br><span class="line">6. 生成结构化报告</span><br><span class="line">     → ID 格式：RPT-&#123;YYYYMMDD&#125;-&#123;HHMMSS&#125;-&#123;jira-key&#125;</span><br><span class="line">     → 归档到 /workspace/reports/jira-bugs/</span><br><span class="line">     → 更新 /workspace/reports/INDEX.md</span><br><span class="line"></span><br><span class="line">7. ⚠️ 暂停，把报告呈给用户确认</span><br><span class="line"></span><br><span class="line">8. 用户明确说&quot;评论到 JIRA&quot; → 发 JIRA 评论</span><br></pre></td></tr></table></figure>
+
+<h3 id="时间锚定这件事为什么重要"><a href="#时间锚定这件事为什么重要" class="headerlink" title="时间锚定这件事为什么重要"></a>时间锚定这件事为什么重要</h3><p>一份 Bug 日志里可能有几十条异常信号，如果每条都去追查，既慢又容易跑偏。”时间锚定根因分析法”的核心动作只有一个：<strong>排除掉窗口外的异常</strong>。</p>
+<p>每个候选根因用一张表来做决策：</p>
+<table>
+<thead>
+<tr>
+<th>异常信号</th>
+<th>最后发生时间</th>
+<th>Bug 窗口内是否持续</th>
+<th>能否解释现象</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>蓝牙断连</td>
+<td>14:23:17</td>
+<td>✅</td>
+<td>✅</td>
+<td>候选根因</td>
+</tr>
+<tr>
+<td>内存告警</td>
+<td>14:10:05</td>
+<td>❌</td>
+<td>✅</td>
+<td>排除（时间不重合）</td>
+</tr>
+<tr>
+<td>RTC 超时</td>
+<td>14:24:01</td>
+<td>✅</td>
+<td>❌</td>
+<td>排除（现象不匹配）</td>
+</tr>
+</tbody></table>
+<p>内存告警在 14:10 就结束了，问题发生在 14:23 窗口内，时间不重合，直接排除。不管它看起来多”可疑”。这个过滤步骤能把需要深查的候选项从几十个压到 2-3 个。</p>
+<p>截图为什么优先于 occurrenceTime？因为截图上的系统时间是系统自动打的，用户填的 occurrenceTime 可能早、可能晚，尤其是用户过了几小时才提交反馈的时候，偏差可以到 ±30 分钟。</p>
+<h3 id="报告质量自查清单"><a href="#报告质量自查清单" class="headerlink" title="报告质量自查清单"></a>报告质量自查清单</h3><p>报告生成完有一个强制 checklist，不满足不能发 JIRA：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">- [ ] 已做时间锚定，窗口已确定</span><br><span class="line">- [ ] 每个候选根因有日志原文作证据</span><br><span class="line">- [ ] P0/P1 结论已查源码，给出文件路径 + 代码片段</span><br><span class="line">- [ ] 已排除时间不重合的异常信号</span><br><span class="line">- [ ] 日志缺口已声明（如有）</span><br></pre></td></tr></table></figure>
+
+<p>最后一条”日志缺口”是说：如果 Bug 发生时间窗口里有一段没有日志覆盖，必须在报告里明确写出来，不能假装那段时间发生了什么。</p>
+<h3 id="发评论的强制人工确认"><a href="#发评论的强制人工确认" class="headerlink" title="发评论的强制人工确认"></a>发评论的强制人工确认</h3><p>Skill 里有三条硬约束：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">❌ 分析完直接发 JIRA 评论</span><br><span class="line">❌ 先发再发 Update 修正</span><br><span class="line">❌ 用户未明确说&quot;评论到 JIRA&quot;就自动发布</span><br></pre></td></tr></table></figure>
+
+<p>默认只归档本地，不发评论。这不是保守设计，而是必要的：AI 分析置信度不是 100%，特别是日志不完整、时间戳有歧义的情况下，让人看一眼确认再发，是防止把半成品分析暴露给其他团队的质量关卡。</p>
+<hr>
+<h2 id="整体架构回顾"><a href="#整体架构回顾" class="headerlink" title="整体架构回顾"></a>整体架构回顾</h2><figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">┌───────────────────────────────────────────────────────────┐</span><br><span class="line">│                    jira-bug-analysis                      │  编排层</span><br><span class="line">└───────────────────────────┬───────────────────────────────┘</span><br><span class="line">                            │</span><br><span class="line">           ┌────────────────┴─────────────────┐</span><br><span class="line">           ▼                                  ▼</span><br><span class="line">┌──────────────────┐              ┌───────────────────────┐</span><br><span class="line">│  jira-integration│              │   lisa-log-download   │  数据访问层</span><br><span class="line">│  (JIRA REST API) │              │   (SIADA MCP 查询)    │</span><br><span class="line">└──────────────────┘              └───────────┬───────────┘</span><br><span class="line">                                              │</span><br><span class="line">                                  ┌───────────▼───────────┐</span><br><span class="line">                                  │      ois-download      │  基础层</span><br><span class="line">                                  │  (BOS STS 临时授权)    │</span><br><span class="line">                                  └────────────────────────┘</span><br><span class="line"></span><br><span class="line">用户意见反馈链路：</span><br><span class="line">┌──────────────────────┐</span><br><span class="line">│  lisa-query-feedback │ → 拿到 fileKey → lisa-log-download → ois-download</span><br><span class="line">│  (AISP Community CMS)│</span><br><span class="line">└──────────────────────┘</span><br></pre></td></tr></table></figure>
+
+<p>两条链路的核心差异：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>链路 A（JIRA 内测）</th>
+<th>链路 B（用户意见反馈）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Bug 来源</td>
+<td>内部测试同学手动提交</td>
+<td>真实用户 App 内上报</td>
+</tr>
+<tr>
+<td>日志存放</td>
+<td>JIRA 附件</td>
+<td>百度 BOS</td>
+</tr>
+<tr>
+<td>鉴权方式</td>
+<td>JIRA PAT（长期凭证）</td>
+<td>SIADA MCP STS（临时，3600s）</td>
+</tr>
+<tr>
+<td>入口</td>
+<td>JIRA Key（LIG-xxxx）</td>
+<td>用户 accountId</td>
+</tr>
+<tr>
+<td>核心 Skill</td>
+<td>jira-bug-analysis</td>
+<td>lisa-query-feedback → lisa-log-download</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="真实效果"><a href="#真实效果" class="headerlink" title="真实效果"></a>真实效果</h2><h3 id="分析测试在Jira上提出的bug"><a href="#分析测试在Jira上提出的bug" class="headerlink" title="分析测试在Jira上提出的bug"></a>分析测试在Jira上提出的bug</h3><ul>
+<li>直接把jira issue id给到AI，会先规划拆分任务<br><img src="/images/claude-code-skills/jira-bug-task-planning.png" alt="AI规划分析任务"></li>
+<li>首先会识别到需要使用jira-bug-analysis这个skill<br><img src="/images/claude-code-skills/jira-skill-identified.png" alt="识别jira-bug-analysis skill"></li>
+<li>接着会读取配置中的jira中的认证信息并获取bug信息<br><img src="/images/claude-code-skills/jira-auth-and-fetch-bug.png" alt="读取JIRA认证并获取Bug信息"></li>
+<li>接着会下载附件信息（日志文件、截图等），并解压<br><img src="/images/claude-code-skills/jira-download-attachments.png" alt="下载并解压附件"></li>
+<li>拿到bug的所有信息后，开始分析<br><img src="/images/claude-code-skills/jira-analysis-in-progress.png" alt="开始分析日志"></li>
+<li>分析完后会形成分析报告存储在本地<br><img src="/images/claude-code-skills/jira-report-saved-locally.png" alt="分析报告保存到本地"></li>
+<li>用户进行选择<br><img src="/images/claude-code-skills/jira-user-confirm.png" alt="用户确认是否发布报告"><br>这是拿之前解决的一个bug进行测试，分析的结果准确无误！</li>
+</ul>
+<h3 id="分析用户在APP提交的日志反馈"><a href="#分析用户在APP提交的日志反馈" class="headerlink" title="分析用户在APP提交的日志反馈"></a>分析用户在APP提交的日志反馈</h3><ul>
+<li>请求查询指定用户id的反馈问题，会自动使用lisa-query-feedback这个skill，并按照skill内容进行操作<br><img src="/images/claude-code-skills/feedback-query-skill-triggered.png" alt="自动触发lisa-query-feedback skill"></li>
+<li>给出用户反馈的问题<br><img src="/images/claude-code-skills/feedback-results-listed.png" alt="列出用户反馈记录"></li>
+<li>要求下载日志进行分析，自动调用ois-download这个skill<br><img src="/images/claude-code-skills/feedback-ois-download-skill-triggered.png" alt="自动触发ois-download skill"></li>
+<li>先检查BOS的依赖是否符合，自动解决<br><img src="/images/claude-code-skills/feedback-bos-deps-check.png" alt="检查并安装BOS依赖"></li>
+<li>然后进行鉴权处理<br><img src="/images/claude-code-skills/feedback-ois-auth.png" alt="OIS STS临时鉴权"></li>
+<li>预签名 URL 生成成功，下载日志进行解压<br><img src="/images/claude-code-skills/feedback-presigned-url-generated.png" alt="预签名URL生成并下载解压"></li>
+<li>分析日志<br><img src="/images/claude-code-skills/feedback-log-analysis.png" alt="分析用户反馈日志"></li>
+<li>最终给出分析报告<br><img src="/images/claude-code-skills/feedback-analysis-report.png" alt="用户反馈分析报告"></li>
+</ul>
+<h2 id="Skills-对-Bug-分析流程的意义"><a href="#Skills-对-Bug-分析流程的意义" class="headerlink" title="Skills 对 Bug 分析流程的意义"></a>Skills 对 Bug 分析流程的意义</h2><p>Bug 分析本质上是一个知识密集型的工作：要知道日志在哪、怎么鉴权拿到、不同平台的字段有什么坑、时间怎么对齐、根因怎么排查。以前这些知识分散在不同人脑子里，换个人来处理就得重新摸索一遍。</p>
+<p>Skills 做的事，是把这些知识从个人脑子里搬到系统里。</p>
+<p><strong>流程可复用。</strong> 五个 Skills 组合成两条固定链路，任何人说出一个 JIRA Key 或者 accountId，就能跑起来完整的分析流程，不需要了解背后每一步怎么做。以前需要熟悉整套系统才能独立处理的工作，现在降低到了”知道入口”就够。</p>
+<p><strong>经验可沉淀。</strong> 眼镜日志时间戳要用 <code>[UA]</code> 锚点换算、JIRA 状态变更必须先查 transition ID 再执行——这类踩坑才知道的细节，写进 Skill 之后就变成了流程的一部分，不会因为换人处理而重复踩坑。</p>
+<p><strong>质量有保障。</strong> <code>jira-bug-analysis</code> 里的强制人工确认节点，确保 AI 分析结果在发布到 JIRA 之前经过人工审核。这不是对 AI 能力的不信任，而是对”有副作用的操作”的边界划定——AI 负责分析，人负责决定要不要发出去。</p>
+<p>这套体系真正解决的问题，是让 Bug 分析从”依赖个人经验”变成”依赖系统流程”。</p>
+]]></content>
+      <categories>
+        <category>VibeCoding方法论</category>
+      </categories>
+      <tags>
+        <tag>AI Coding</tag>
+        <tag>Claude Code</tag>
+        <tag>Skills</tag>
+        <tag>Bug分析</tag>
+        <tag>工程实践</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>从Runtime到Runloop</title>
+    <url>/2026/03/30/from_runtime_tor_runloop/</url>
+    <content><![CDATA[<h1 id="从Runtime到Runloop"><a href="#从Runtime到Runloop" class="headerlink" title="从Runtime到Runloop"></a>从Runtime到Runloop</h1><p>iOS 程序的执行顺序分两个层面：启动过程和运行时的生命周期。</p>
+<span id="more"></span>
+
+<p><img src="/images/from_runtime_to_runloop.jpeg" alt="iOS程序执行流程"></p>
+<p>① 内核 &amp; dyld 阶段<br>用户点击 App 图标后，系统做的第一件事不是执行你写的代码，而是：<br>内核把 Mach-O 格式的可执行文件映射进内存，然后交给 dyld（动态链接器）。dyld 负责把 UIKit、Foundation、你引入的第三方库等所有动态库加载进来，解析符号，把函数地址都对号入座。<br>之后 Objective-C Runtime 初始化，执行所有类的 +load 方法。这是整个 App 里最早被执行的自定义代码，很多黑魔法（Method Swizzling）就藏在这里。</p>
+<p>② main() 函数<br>这是能看到的起点，但其实也就两行核心代码：</p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Swift 项目里用 @main 替代，本质一样</span></span><br><span class="line"><span class="type">UIApplicationMain</span>(argc, argv, <span class="literal">nil</span>, <span class="type">NSStringFromClass</span>(<span class="type">AppDelegate</span>.<span class="keyword">self</span>))</span><br></pre></td></tr></table></figure>
+
+<p>UIApplicationMain 做了三件事：创建 UIApplication 单例、创建 AppDelegate 实例、启动主线程的 RunLoop（这个函数永远不会返回）。</p>
+<p>③ AppDelegate 回调</p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">application</span>(<span class="keyword">_</span> <span class="params">application</span>: <span class="type">UIApplication</span>,</span><br><span class="line">                 <span class="params">didFinishLaunchingWithOptions</span> <span class="params">launchOptions</span>: [<span class="type">UIApplication</span>.<span class="params">LaunchOptionsKey</span>: <span class="keyword">Any</span>]<span class="operator">?</span>) -&gt; <span class="type">Bool</span> &#123;</span><br><span class="line">    <span class="comment">// 在这里做：SDK 初始化、推送注册、根视图设置</span></span><br><span class="line">    <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这是真正干活的第一个入口。返回 false 会让系统认为启动失败。<br>iOS 13 之后引入了 SceneDelegate，多窗口相关的逻辑（比如 iPad 分屏）从 AppDelegate 拆了出来，窗口和根 ViewController 的设置移到 scene(_:willConnectTo:) 里做。</p>
+<p>④ ViewController 生命周期<br>这是日常开发接触最多的部分，几个关键方法的调用时机：</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>调用时机</th>
+<th>适合做什么</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>loadView</td>
+<td>视图还不存在时</td>
+<td>自定义根 view（少用）</td>
+</tr>
+<tr>
+<td>viewDidLoad</td>
+<td>视图加载完，只调一次</td>
+<td>UI 初始化、绑定数据</td>
+</tr>
+<tr>
+<td>viewWillAppear</td>
+<td>每次显示前</td>
+<td>刷新数据、注册通知</td>
+</tr>
+<tr>
+<td>viewDidAppear</td>
+<td>每次显示后</td>
+<td>开始动画、开始录音</td>
+</tr>
+<tr>
+<td>viewWillDisappear</td>
+<td>每次消失前</td>
+<td>保存状态、取消网络请求</td>
+</tr>
+<tr>
+<td>viewDidDisappear</td>
+<td>每次消失后</td>
+<td>移除通知、暂停播放</td>
+</tr>
+</tbody></table>
+<p>⑤ RunLoop：App 真正的心跳<br>UIApplicationMain 启动之后，主线程就进入了一个 永不退出的事件循环，这就是 RunLoop。它的工作原理是：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">有事件来了？→ 处理（触摸、定时器、网络回调……）</span><br><span class="line">没事件？→ 休眠，让出 CPU</span><br></pre></td></tr></table></figure>
+
+<p>所有的用户交互、网络回调、动画帧渲染，本质上都是”往 RunLoop 里投递事件”，然后等 RunLoop 调度到你。<br>这也是为什么在主线程做耗时操作会卡 UI——RunLoop 被占着，其他事件（包括屏幕刷新）都排不上队。<br>参考资料<br><a href="https://mp.weixin.qq.com/s/hTyudBBgFyq8Y3apr9xBTQ">iOS之Runloop</a></p>
+]]></content>
+      <categories>
+        <category>iOS</category>
+      </categories>
+      <tags>
+        <tag>Runtime</tag>
+        <tag>Runloop</tag>
+        <tag>iOS开发</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>H5详情页加载白屏优化：WKWebView渲染原理与实践</title>
+    <url>/2026/04/18/h5-webview-white-screen-optimization/</url>
+    <content><![CDATA[<h1 id="H5详情页加载白屏优化"><a href="#H5详情页加载白屏优化" class="headerlink" title="H5详情页加载白屏优化"></a>H5详情页加载白屏优化</h1><span id="more"></span>
+
+<h2 id="一、WebView-渲染流程"><a href="#一、WebView-渲染流程" class="headerlink" title="一、WebView 渲染流程"></a>一、WebView 渲染流程</h2><p><img src="/images/H5/1280X1280.PNG" alt="WKWebView 渲染流程"></p>
+<p>整个流程由 WebKit 框架驱动，运行在 iOS 系统的 WebContent 沙盒进程中。</p>
+<hr>
+<h3 id="①-初始化-WKWebView"><a href="#①-初始化-WKWebView" class="headerlink" title="① 初始化 WKWebView"></a>① 初始化 WKWebView</h3><p>iOS 8 之后，苹果用 WKWebView 取代了老旧的 UIWebView。初始化时有几个关键对象：</p>
+<p><code>WKWebViewConfiguration</code> 是整个配置的容器，里面最重要的是 <code>WKUserContentController</code>，你可以通过它注入 JS 脚本（WKUserScript），也可以注册消息处理器，让网页调用 Native 功能。</p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">let</span> config <span class="operator">=</span> <span class="type">WKWebViewConfiguration</span>()</span><br><span class="line"><span class="keyword">let</span> controller <span class="operator">=</span> <span class="type">WKUserContentController</span>()</span><br><span class="line">controller.add(<span class="keyword">self</span>, name: <span class="string">&quot;myBridge&quot;</span>)  <span class="comment">// 注册通信接口</span></span><br><span class="line">config.userContentController <span class="operator">=</span> controller</span><br><span class="line"></span><br><span class="line"><span class="keyword">let</span> webView <span class="operator">=</span> <span class="type">WKWebView</span>(frame: view.bounds, configuration: config)</span><br><span class="line">webView.navigationDelegate <span class="operator">=</span> <span class="keyword">self</span></span><br><span class="line">webView.uiDelegate <span class="operator">=</span> <span class="keyword">self</span></span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="②-发起请求-导航拦截"><a href="#②-发起请求-导航拦截" class="headerlink" title="② 发起请求 &amp; 导航拦截"></a>② 发起请求 &amp; 导航拦截</h3><p>调用 <code>load(URLRequest)</code> 后，WebKit 会先问你的 <code>navigationDelegate</code>：这次跳转允许吗？</p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">webView</span>(<span class="keyword">_</span> <span class="params">webView</span>: <span class="type">WKWebView</span>,</span><br><span class="line">             <span class="params">decidePolicyFor</span> <span class="params">action</span>: <span class="type">WKNavigationAction</span>,</span><br><span class="line">             <span class="params">decisionHandler</span>: <span class="keyword">@escaping</span> (<span class="type">WKNavigationActionPolicy</span>) -&gt; <span class="type">Void</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> action.request.url<span class="operator">?</span>.scheme <span class="operator">==</span> <span class="string">&quot;myapp&quot;</span> &#123;</span><br><span class="line">        <span class="comment">// 拦截自定义 scheme，做 JS Bridge</span></span><br><span class="line">        decisionHandler(.cancel)</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        decisionHandler(.allow)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个回调是拦截跳转的最佳时机，可以阻止跳转、做鉴权、拦截自定义 scheme。</p>
+<hr>
+<h3 id="③-网络层：DNS-→-TCP-→-HTTP"><a href="#③-网络层：DNS-→-TCP-→-HTTP" class="headerlink" title="③ 网络层：DNS → TCP → HTTP"></a>③ 网络层：DNS → TCP → HTTP</h3><p>这部分由系统的 URLSession &#x2F; CFNetwork 栈驱动（不是 App 的 URLSession，是 WebContent 进程内部的）：</p>
+<ul>
+<li><strong>DNS 解析</strong>：系统缓存优先，没缓存才真正查询。</li>
+<li><strong>TLS 握手</strong>：HTTPS 站点会走证书验证，如果服务器证书有问题，<code>didReceive challenge</code> 回调会触发，App 可以自定义处理。</li>
+<li><strong>HTTP 缓存</strong>：遵循标准的 Cache-Control、ETag 等缓存协议，WKWebView 有自己的磁盘缓存（WKWebsiteDataStore），不共享 App 的 URLCache，这点是常见踩坑点。</li>
+</ul>
+<hr>
+<h3 id="④-响应策略"><a href="#④-响应策略" class="headerlink" title="④ 响应策略"></a>④ 响应策略</h3><p>收到服务器响应头后，再问一次 delegate：这个响应允许展示吗？</p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">webView</span>(<span class="keyword">_</span> <span class="params">webView</span>: <span class="type">WKWebView</span>,</span><br><span class="line">             <span class="params">decidePolicyFor</span> <span class="params">response</span>: <span class="type">WKNavigationResponse</span>,</span><br><span class="line">             <span class="params">decisionHandler</span>: <span class="keyword">@escaping</span> (<span class="type">WKNavigationResponsePolicy</span>) -&gt; <span class="type">Void</span>) &#123;</span><br><span class="line">    <span class="comment">// 可检查 MIME 类型、状态码等</span></span><br><span class="line">    decisionHandler(.allow)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果 MIME 类型是 PDF 或其他无法渲染的内容，WebKit 会自动触发下载。</p>
+<hr>
+<h3 id="⑤-渲染引擎：WebKit-的五步流水线"><a href="#⑤-渲染引擎：WebKit-的五步流水线" class="headerlink" title="⑤ 渲染引擎：WebKit 的五步流水线"></a>⑤ 渲染引擎：WebKit 的五步流水线</h3><p>这是最核心的部分，数据到了之后 WebKit 做这些事：</p>
+<ol>
+<li><strong>HTML 解析 → DOM Tree</strong>：把 HTML 字节流解析成节点树，遇到 <code>&lt;script&gt;</code> 默认阻塞解析（除非有 async&#x2F;defer）。</li>
+<li><strong>CSS 解析 → CSSOM</strong>：解析所有样式表，生成样式规则树。</li>
+<li><strong>合并 Render Tree</strong>：把 DOM 和 CSSOM 合并，只包含可见节点。</li>
+<li><strong>Layout（排版）</strong>：计算每个节点在屏幕上的精确位置和大小。</li>
+<li><strong>Paint + Composite（绘制与合成）</strong>：生成图层，交给 GPU 合成输出到屏幕。</li>
+</ol>
+<p>JS 由 JavaScriptCore 引擎执行（和 Safari 共用）。图片解码是异步的，不阻塞主渲染流程。</p>
+<hr>
+<h3 id="⑥-JS-↔-Native-通信（Bridge）"><a href="#⑥-JS-↔-Native-通信（Bridge）" class="headerlink" title="⑥ JS ↔ Native 通信（Bridge）"></a>⑥ JS ↔ Native 通信（Bridge）</h3><p>这是混合开发最常用的能力：</p>
+<p><strong>网页调 Native：</strong> 网页发消息，Native 在回调里处理：</p>
+<figure class="highlight javascript"><table><tr><td class="code"><pre><span class="line"><span class="comment">// 网页侧</span></span><br><span class="line"><span class="variable language_">window</span>.<span class="property">webkit</span>.<span class="property">messageHandlers</span>.<span class="property">myBridge</span>.<span class="title function_">postMessage</span>(&#123; <span class="attr">action</span>: <span class="string">&quot;login&quot;</span> &#125;);</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Native 侧</span></span><br><span class="line"><span class="keyword">func</span> <span class="title function_">userContentController</span>(<span class="keyword">_</span> <span class="params">controller</span>: <span class="type">WKUserContentController</span>,</span><br><span class="line">                            <span class="params">didReceive</span> <span class="params">message</span>: <span class="type">WKScriptMessage</span>) &#123;</span><br><span class="line">    <span class="built_in">print</span>(message.body)  <span class="comment">// 收到 &#123; action: &quot;login&quot; &#125;</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>Native 调网页：</strong> 直接执行 JS 字符串：</p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line">webView.evaluateJavaScript(<span class="string">&quot;updateUserInfo(&#x27;<span class="subst">\(name)</span>&#x27;)&quot;</span>) &#123; result, error <span class="keyword">in</span></span><br><span class="line">    <span class="comment">// 拿到 JS 返回值</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="⑦-进程模型：为什么-WebView-崩溃不会让-App-崩溃"><a href="#⑦-进程模型：为什么-WebView-崩溃不会让-App-崩溃" class="headerlink" title="⑦ 进程模型：为什么 WebView 崩溃不会让 App 崩溃"></a>⑦ 进程模型：为什么 WebView 崩溃不会让 App 崩溃</h3><p>这是 <code>WKWebView</code> 和老 <code>UIWebView</code> 最大的架构区别。<code>WKWebView</code> 的网页内容运行在一个<strong>独立的 WebContent 进程</strong>里，与 App 主进程通过 IPC（进程间通信）交互：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">App 主进程（你的代码）</span><br><span class="line">     ↕  IPC</span><br><span class="line">WebContent 进程（网页运行在这里）</span><br></pre></td></tr></table></figure>
+
+<p>好处：网页 JS 内存溢出或崩溃，只会终止 WebContent 进程，App 主进程安然无恙。你会收到 <code>webViewWebContentProcessDidTerminate</code> 回调，可以在里面重新加载：</p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">webViewWebContentProcessDidTerminate</span>(<span class="keyword">_</span> <span class="params">webView</span>: <span class="type">WKWebView</span>) &#123;</span><br><span class="line">    webView.reload()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="二、APP-可以优化的点"><a href="#二、APP-可以优化的点" class="headerlink" title="二、APP 可以优化的点"></a>二、APP 可以优化的点</h2><p><img src="/images/H5/7be01e5a-2b9a-44ea-8e93-d9b57dba703a.png" alt="优化概览"></p>
+<ul>
+<li>提前预热 WKWebView（第一次创建 WebView 本身需要约 200-300ms 初始化）</li>
+<li>离线包方案：把 H5 资源打包进 App，省去网络下载时间</li>
+<li>预加载：用户还没点进去，App 就偷偷在后台开始加载页面</li>
+<li>注入公共 Cookie &#x2F; Token，省去 H5 自己获取登录态的时间</li>
+</ul>
+<hr>
+<h3 id="1-预热-WKWebView"><a href="#1-预热-WKWebView" class="headerlink" title="1. 预热 WKWebView"></a>1. 预热 WKWebView</h3><p><strong>问题根源</strong>：第一次创建 WKWebView 时，系统需要启动 WebContent 进程、初始化 WebKit 引擎，耗时 200-300ms，用户会感觉到明显的白屏延迟。</p>
+<p><strong>解法</strong>：App 启动后提前创建一个 WKWebView 藏在内存里，用户真正打开页面时直接拿来用，跳过初始化耗时。</p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">WKWebViewPool</span> &#123;</span><br><span class="line">    <span class="keyword">static</span> <span class="keyword">let</span> shared <span class="operator">=</span> <span class="type">WKWebViewPool</span>()</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">var</span> warmWebView: <span class="type">WKWebView</span>?</span><br><span class="line"></span><br><span class="line">    <span class="comment">// App 启动时调用，提前预热</span></span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">warmUp</span>() &#123;</span><br><span class="line">        <span class="keyword">let</span> config <span class="operator">=</span> <span class="type">WKWebViewConfiguration</span>()</span><br><span class="line">        warmWebView <span class="operator">=</span> <span class="type">WKWebView</span>(frame: .zero, configuration: config)</span><br><span class="line">        <span class="comment">// 加载一个空页面，触发 WebContent 进程启动</span></span><br><span class="line">        warmWebView<span class="operator">?</span>.load(<span class="type">URLRequest</span>(url: <span class="type">URL</span>(string: <span class="string">&quot;about:blank&quot;</span>)<span class="operator">!</span>))</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 用户要打开页面时，取出预热好的实例</span></span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">dequeue</span>() -&gt; <span class="type">WKWebView</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">let</span> webView <span class="operator">=</span> warmWebView &#123;</span><br><span class="line">            warmWebView <span class="operator">=</span> <span class="literal">nil</span></span><br><span class="line">            warmUp() <span class="comment">// 取走之后立刻再预热一个备用</span></span><br><span class="line">            <span class="keyword">return</span> webView</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="type">WKWebView</span>(frame: .zero)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// AppDelegate 里</span></span><br><span class="line"><span class="keyword">func</span> <span class="title function_">applicationDidFinishLaunching</span>(<span class="keyword">_</span> <span class="params">application</span>: <span class="type">UIApplication</span>) &#123;</span><br><span class="line">    <span class="type">WKWebViewPool</span>.shared.warmUp()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p><strong>注意</strong>：预热的 WKWebView 要放在内存里，不能加到任何视图层级上，否则会影响布局。</p>
+</blockquote>
+<hr>
+<h3 id="2-离线包方案"><a href="#2-离线包方案" class="headerlink" title="2. 离线包方案"></a>2. 离线包方案</h3><p><strong>问题根源</strong>：H5 资源（JS、CSS、图片）每次都要从网络下载，弱网环境下可能要等 1-3 秒。</p>
+<p><strong>核心思路</strong>：把 H5 的静态资源提前打包下载到本地，WebView 加载时拦截网络请求，用本地文件替代网络响应。</p>
+<p>整个流程分三个阶段：</p>
+<p><strong>① 打包阶段（H5 构建时）：</strong></p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">H5 项目构建</span><br><span class="line">    ↓</span><br><span class="line">生成资源包 package.zip</span><br><span class="line">    ↓</span><br><span class="line">上传到 CDN，同时更新版本号配置文件</span><br></pre></td></tr></table></figure>
+
+<p><strong>② 下载阶段（App 运行时）：</strong></p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">OfflinePackageManager</span> &#123;</span><br><span class="line">    <span class="comment">// App 启动或切到前台时检查更新</span></span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">checkUpdate</span>() &#123;</span><br><span class="line">        fetchVersionConfig &#123; remoteVersion <span class="keyword">in</span></span><br><span class="line">            <span class="keyword">let</span> localVersion <span class="operator">=</span> <span class="type">UserDefaults</span>.standard.string(forKey: <span class="string">&quot;offlineVersion&quot;</span>)</span><br><span class="line">            <span class="keyword">if</span> remoteVersion <span class="operator">!=</span> localVersion &#123;</span><br><span class="line">                <span class="keyword">self</span>.downloadPackage(version: remoteVersion)</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">downloadPackage</span>(<span class="params">version</span>: <span class="type">String</span>) &#123;</span><br><span class="line">        <span class="comment">// 下载 zip 到沙盒</span></span><br><span class="line">        <span class="comment">// 解压到 /Library/offline/package/</span></span><br><span class="line">        <span class="comment">// 更新本地版本号记录</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>③ 拦截阶段（WebView 加载时）：</strong></p>
+<p>用 <code>WKURLSchemeHandler</code> 拦截请求，用本地文件响应：</p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">OfflineSchemeHandler</span>: <span class="title class_ inherited__">NSObject</span>, <span class="title class_ inherited__">WKURLSchemeHandler</span> &#123;</span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">webView</span>(<span class="keyword">_</span> <span class="params">webView</span>: <span class="type">WKWebView</span>,</span><br><span class="line">                 <span class="params">start</span> <span class="params">urlSchemeTask</span>: <span class="type">WKURLSchemeTask</span>) &#123;</span><br><span class="line">        <span class="keyword">let</span> url <span class="operator">=</span> urlSchemeTask.request.url<span class="operator">!</span></span><br><span class="line">        <span class="keyword">let</span> localPath <span class="operator">=</span> mapToLocalFile(url)  <span class="comment">// URL 映射到本地文件路径</span></span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> <span class="type">FileManager</span>.default.fileExists(atPath: localPath),</span><br><span class="line">           <span class="keyword">let</span> data <span class="operator">=</span> <span class="type">FileManager</span>.default.contents(atPath: localPath) &#123;</span><br><span class="line">            <span class="comment">// 本地有缓存，直接用本地文件响应</span></span><br><span class="line">            <span class="keyword">let</span> response <span class="operator">=</span> <span class="type">URLResponse</span>(url: url,</span><br><span class="line">                                       mimeType: mimeType(for: localPath),</span><br><span class="line">                                       expectedContentLength: data.count,</span><br><span class="line">                                       textEncodingName: <span class="string">&quot;utf-8&quot;</span>)</span><br><span class="line">            urlSchemeTask.didReceive(response)</span><br><span class="line">            urlSchemeTask.didReceive(data)</span><br><span class="line">            urlSchemeTask.didFinish()</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="comment">// 本地没有，降级走网络</span></span><br><span class="line">            fallbackToNetwork(urlSchemeTask)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 注册拦截器</span></span><br><span class="line"><span class="keyword">let</span> config <span class="operator">=</span> <span class="type">WKWebViewConfiguration</span>()</span><br><span class="line">config.setURLSchemeHandler(<span class="type">OfflineSchemeHandler</span>(), forURLScheme: <span class="string">&quot;https&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p><strong>效果</strong>：JS&#x2F;CSS 从本地读取，耗时从几百毫秒降到几毫秒，首屏速度提升明显。</p>
+</blockquote>
+<hr>
+<h3 id="3-预加载"><a href="#3-预加载" class="headerlink" title="3. 预加载"></a>3. 预加载</h3><p><strong>问题根源</strong>：用户点进页面的那一刻才开始加载，等待时间全摆在用户面前。</p>
+<p><strong>解法</strong>：在用户”即将”打开页面之前，偷偷提前开始加载。</p>
+<p>触发时机的选择：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">太早预加载  →  浪费流量和内存（用户可能根本不点）</span><br><span class="line">太晚预加载  →  来不及，效果差</span><br><span class="line"></span><br><span class="line">最佳时机：</span><br><span class="line">  列表页 → 用户手指触摸某个 cell 时（touchesBegan）</span><br><span class="line">  首页   → App 启动完成后，主要内容渲染完之后</span><br><span class="line">  活动页 → 运营后台配置&quot;即将推送&quot;时提前下载</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">PreloadWebView</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">var</span> hiddenWebView: <span class="type">WKWebView</span>?</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 用户手指按下 cell 时触发（比点击早约 100ms）</span></span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">preload</span>(<span class="params">url</span>: <span class="type">URL</span>) &#123;</span><br><span class="line">        <span class="keyword">guard</span> hiddenWebView <span class="operator">==</span> <span class="literal">nil</span> <span class="keyword">else</span> &#123; <span class="keyword">return</span> &#125;</span><br><span class="line">        hiddenWebView <span class="operator">=</span> <span class="type">WKWebView</span>(frame: .zero)</span><br><span class="line">        hiddenWebView<span class="operator">?</span>.load(<span class="type">URLRequest</span>(url: url))</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 用户真正点击时，把预加载好的 WebView 展示出来</span></span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">dequeuePreloaded</span>() -&gt; <span class="type">WKWebView</span>? &#123;</span><br><span class="line">        <span class="keyword">let</span> webView <span class="operator">=</span> hiddenWebView</span><br><span class="line">        hiddenWebView <span class="operator">=</span> <span class="literal">nil</span></span><br><span class="line">        <span class="keyword">return</span> webView</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p><strong>注意</strong>：预加载要控制数量，同时预加载太多会占用大量内存，一般只预加载 1-2 个页面。</p>
+</blockquote>
+<hr>
+<h3 id="4-注入-Cookie-Token"><a href="#4-注入-Cookie-Token" class="headerlink" title="4. 注入 Cookie &#x2F; Token"></a>4. 注入 Cookie &#x2F; Token</h3><p><strong>问题根源</strong>：H5 加载完成后还要自己发请求获取登录态，又多一次网络往返，慢且有闪屏风险（先展示未登录状态，再切换到登录状态）。</p>
+<p><strong>解法</strong>：WebView 加载之前，Native 把 Token 直接塞进去，H5 一渲染就已经是登录状态了。</p>
+<p><strong>方式一：注入 Cookie</strong></p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">injectCookie</span>(<span class="params">to</span> <span class="params">webView</span>: <span class="type">WKWebView</span>, <span class="params">completion</span>: <span class="keyword">@escaping</span> () -&gt; <span class="type">Void</span>) &#123;</span><br><span class="line">    <span class="keyword">let</span> token <span class="operator">=</span> <span class="type">KeychainManager</span>.getToken()</span><br><span class="line">    <span class="keyword">let</span> cookieStore <span class="operator">=</span> webView.configuration.websiteDataStore.httpCookieStore</span><br><span class="line"></span><br><span class="line">    <span class="keyword">let</span> cookie <span class="operator">=</span> <span class="type">HTTPCookie</span>(properties: [</span><br><span class="line">        .name:    <span class="string">&quot;token&quot;</span>,</span><br><span class="line">        .value:   token,</span><br><span class="line">        .domain:  <span class="string">&quot;.mycompany.com&quot;</span>,   <span class="comment">// 注意加点，支持子域名</span></span><br><span class="line">        .path:    <span class="string">&quot;/&quot;</span>,</span><br><span class="line">        .secure:  <span class="string">&quot;TRUE&quot;</span>,</span><br><span class="line">        .expires: <span class="type">Date</span>().addingTimeInterval(<span class="number">7</span> <span class="operator">*</span> <span class="number">24</span> <span class="operator">*</span> <span class="number">3600</span>)</span><br><span class="line">    ])<span class="operator">!</span></span><br><span class="line"></span><br><span class="line">    cookieStore.setCookie(cookie) &#123;</span><br><span class="line">        completion()  <span class="comment">// Cookie 注入完成后再 load URL</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 使用</span></span><br><span class="line">injectCookie(to: webView) &#123;</span><br><span class="line">    webView.load(<span class="type">URLRequest</span>(url: targetURL))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>方式二：注入 JS 全局变量</strong></p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">let</span> token <span class="operator">=</span> <span class="type">KeychainManager</span>.getToken()</span><br><span class="line"><span class="keyword">let</span> userInfo <span class="operator">=</span> [<span class="string">&quot;token&quot;</span>: token, <span class="string">&quot;userId&quot;</span>: <span class="string">&quot;123456&quot;</span>, <span class="string">&quot;vipLevel&quot;</span>: <span class="number">3</span>] <span class="keyword">as</span> [<span class="type">String</span>: <span class="keyword">Any</span>]</span><br><span class="line"><span class="keyword">let</span> json <span class="operator">=</span> <span class="keyword">try!</span> <span class="type">JSONSerialization</span>.data(withJSONObject: userInfo)</span><br><span class="line"><span class="keyword">let</span> jsonString <span class="operator">=</span> <span class="type">String</span>(data: json, encoding: .utf8)<span class="operator">!</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 在页面 JS 执行前注入，H5 可以直接读取</span></span><br><span class="line"><span class="keyword">let</span> script <span class="operator">=</span> <span class="type">WKUserScript</span>(</span><br><span class="line">    source: <span class="string">&quot;window.__nativeUserInfo = <span class="subst">\(jsonString)</span>&quot;</span>,</span><br><span class="line">    injectionTime: .atDocumentStart,  <span class="comment">// DOM 构建前就注入</span></span><br><span class="line">    forMainFrameOnly: <span class="literal">true</span></span><br><span class="line">)</span><br><span class="line">config.userContentController.addUserScript(script)</span><br></pre></td></tr></table></figure>
+
+<p>H5 侧直接读取，不用发额外请求：</p>
+<figure class="highlight javascript"><table><tr><td class="code"><pre><span class="line"><span class="comment">// 页面初始化时</span></span><br><span class="line"><span class="keyword">const</span> userInfo = <span class="variable language_">window</span>.<span class="property">__nativeUserInfo</span></span><br><span class="line"><span class="keyword">if</span> (userInfo?.<span class="property">token</span>) &#123;</span><br><span class="line">    <span class="comment">// 直接用，不用再请求登录态接口</span></span><br><span class="line">    <span class="title function_">initPageWithToken</span>(userInfo.<span class="property">token</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="5-DNS-预解析"><a href="#5-DNS-预解析" class="headerlink" title="5. DNS 预解析"></a>5. DNS 预解析</h3><p><strong>问题</strong>：WebView 加载时，第一步 DNS 解析就要花 50-200ms，弱网下更慢。</p>
+<p><strong>解法</strong>：在 App 启动时提前解析目标域名，WebView 真正发请求时直接用缓存的 IP：</p>
+<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="comment">// App 启动时预解析常用域名</span></span><br><span class="line"><span class="keyword">let</span> hosts <span class="operator">=</span> [<span class="string">&quot;mycompany.com&quot;</span>, <span class="string">&quot;api.mycompany.com&quot;</span>, <span class="string">&quot;static.mycompany.com&quot;</span>]</span><br><span class="line"><span class="keyword">for</span> host <span class="keyword">in</span> hosts &#123;</span><br><span class="line">    <span class="keyword">let</span> <span class="keyword">_</span> <span class="operator">=</span> <span class="type">CFHostCreateWithName</span>(<span class="literal">nil</span>, host <span class="keyword">as</span> <span class="type">CFString</span>)</span><br><span class="line">        .takeRetainedValue()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="整体效果对比"><a href="#整体效果对比" class="headerlink" title="整体效果对比"></a>整体效果对比</h3><figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">不做任何优化：</span><br><span class="line">用户点击 → WebView 初始化(300ms) → DNS(100ms)</span><br><span class="line">        → TCP/TLS(200ms) → 下载资源(500ms) → 渲染 = 约 1.1s</span><br><span class="line"></span><br><span class="line">全部优化后：</span><br><span class="line">用户点击 → 拿预热 WebView(0ms) → 读本地离线包(5ms)</span><br><span class="line">        → 渲染(已预加载，接近 0ms) = 约 100ms 内</span><br></pre></td></tr></table></figure>
+
+<p>每一个优化点单独用都有效果，组合起来用效果最显著，头部大厂的 H5 页面秒开基本都是这几板斧叠加的结果。</p>
+<hr>
+<h2 id="三、具体优化过程"><a href="#三、具体优化过程" class="headerlink" title="三、具体优化过程"></a>三、具体优化过程</h2><h3 id="（一）现有卡点和改进思路"><a href="#（一）现有卡点和改进思路" class="headerlink" title="（一）现有卡点和改进思路"></a>（一）现有卡点和改进思路</h3><p>现在的记事本业务中（代办提醒业务也有加载 H5 的业务，但是涉及到 RN bundle 的加载，暂不考虑），点击笔记 item 都会加载对应的 H5 详情页面，从点击到完全渲染出页面体感耗时 1s+，会看到明显的 loading 动画和短暂的白屏过渡。</p>
+<p><strong>优化前效果：</strong></p>
+<video controls width="360" style="max-width:100%">
+  <source src="/images/H5/ScreenRecording_03-26-2026 10-13-59_1 (1).mp4" type="video/mp4">
+</video>
+
+<p>现有的业务代码逻辑是：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">点击 item → 创建新 WebView → load H5 → 等页面起来 → 再展示内容</span><br></pre></td></tr></table></figure>
+
+<p><code>MemoryListView</code> 打开的 <code>selectedNoteUrl</code> 实际上是固定的 <code>livisNotepadURL</code>，noteId 是通过 <code>customData</code> 传进去的，不是每条笔记一个不同 URL。那么，完全可以提前把记事本 H5 “壳子页”预加载好，点击后直接复用这一个 WKWebView，再把当前 noteId 注入进去。这比每条 item 单独预加载一个 H5 简单很多、风险也低很多。</p>
+<p>所以修改后的方案是：</p>
+<blockquote>
+<p>页面进入时就预取 token + 预热 WebKit + 预加载记事本 H5 壳子 → 点击 item 时直接复用已加载好的 WebView → 注入 noteId → 展示</p>
+</blockquote>
+<p>也就是说暂时可以先做上面优化里面的 <strong>1（预热）、3（预加载）、4（注入 Cookie）</strong> 三项优化。</p>
+<hr>
+<h3 id="（二）具体改动"><a href="#（二）具体改动" class="headerlink" title="（二）具体改动"></a>（二）具体改动</h3><p>要想把预加载出来的 WKWebView 真正复用到正式展示链路里，就需要修改 UILib 库。</p>
+<p>因为当前 <code>LivisWebViewController</code> 最终会走 Pod 里的 <code>WebViewController</code>，创建自己的 <code>wkWebView</code> 并自动 <code>loadRequest</code>。如果不改 Pod，就很难把 <code>WebViewPreloader.shared.preloadedWebView</code> 真正塞进去复用。</p>
+<h4 id="一期"><a href="#一期" class="headerlink" title="一期"></a>一期</h4><p>暂时先不做较大改动，先采用以下方案：</p>
+<p>不再追求复用同一个预加载 WKWebView 实例（那需要改 Pod 基类），而是改成三件事：</p>
+<ul>
+<li><strong>提前拿登录态</strong>：进入列表页就预取 JWT；</li>
+<li><strong>提前种业务 Cookie</strong>：避免点击后再补登录态；</li>
+<li><strong>提前预热 WebKit &#x2F; H5 壳子页</strong>：让正式打开时尽量复用已拉起的 WebContent 进程、共享 processPool、共享 UserAgent、共享默认数据存储带来的缓存收益。</li>
+</ul>
+<p>具体修改：</p>
+<ul>
+<li>新增记事本 H5 的统一预热配置与辅助方法到 <code>WebViewUtils.swift</code>，包括 notebook URL、提前种 cookie、构造与正式链路更接近的预热 <code>WKWebViewConfiguration</code>、为预热 WebView 设置共享 processPool 和 UserAgent。</li>
+<li>扩展 <code>WebViewPreloader.swift</code>，支持在预热时传入自定义 <code>webViewConfigurator</code>，这样就能在不碰 Pod 基类的前提下，让预热出来的 WebView 更贴近正式打开链路。最后把 <code>MemoryListView.swift</code> 的 <code>prepareNotebookH5IfNeeded()</code> 改成统一走这些工具方法，减少点击前后的配置分叉。</li>
+</ul>
+<p>预期的效果：</p>
+<ul>
+<li>列表页进入后更早完成 JWT &#x2F; cookie &#x2F; WebKit 进程 &#x2F; UserAgent &#x2F; 共享 processPool 预热；</li>
+<li>点击笔记 item 时，正式 WebView 能复用更多进程与缓存收益，减轻冷启动白屏；</li>
+<li>所有改动都在 Swift 层，不改 Pod。</li>
+</ul>
+<p><strong>优化后效果：</strong></p>
+<video controls width="360" style="max-width:100%">
+  <source src="/images/H5/ScreenRecording_03-27-2026 15-51-40_1 (1).mp4" type="video/mp4">
+</video>
+
+<p>速度快的话会看不到 loading 动画，但是还是会有白屏间隙时间。</p>
+<h4 id="二期"><a href="#二期" class="headerlink" title="二期"></a>二期</h4><p>未完待续…</p>
+<hr>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
+<li><a href="https://mp.weixin.qq.com/s/Xqr6rQBbx7XPoBESEFuXJw">今日头条品质优化 - 图文详情页秒开实践</a></li>
+<li><a href="https://zhuanlan.zhihu.com/p/393177043">Android &#x2F; iOS Webview 容器下 JSBridge SDK 原理浅析 —— 前端视角</a></li>
+<li><a href="https://mp.weixin.qq.com/s/PtzMWWcTKwPZWXFFkLQ7yA">H5开屏从龟速到闪电，企微是如何做到的</a></li>
+<li><a href="https://mp.weixin.qq.com/s/AV2SwFfwwJH7xyrIBJemgw">网易新闻客户端 H5 秒开优化</a></li>
+<li><a href="https://mp.weixin.qq.com/s/_DdaUaUVojHPhOS8XEZl5g">淘宝页面首帧优化的经验和心得</a></li>
+<li><a href="https://mp.weixin.qq.com/s/FmGP0oMy1ratWHAMeOGrkA">将淘宝直播间融入H5页面的技术探索</a></li>
+<li><a href="https://mp.weixin.qq.com/s/VFXSapEnCaYcRp-ODE1gdA">淘宝客户端动态化页面搭建</a></li>
+<li><a href="https://mp.weixin.qq.com/s/O6daxmeTuLE1b7d9nTQiCw">淘宝承接页是如何实现秒开的</a></li>
+</ul>
+]]></content>
+      <categories>
+        <category>iOS</category>
+      </categories>
+      <tags>
+        <tag>iOS</tag>
+        <tag>H5</tag>
+        <tag>性能优化</tag>
+        <tag>WKWebView</tag>
+        <tag>白屏优化</tag>
+        <tag>离线包</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>从“实时通话”到“实时智能交互总线”：一套移动端 RTC 架构实践</title>
     <url>/2026/04/09/RTC/</url>
     <content><![CDATA[<h1 id="从“实时通话”到“实时智能交互总线”：一套移动端-RTC-架构实践"><a href="#从“实时通话”到“实时智能交互总线”：一套移动端-RTC-架构实践" class="headerlink" title="从“实时通话”到“实时智能交互总线”：一套移动端 RTC 架构实践"></a>从“实时通话”到“实时智能交互总线”：一套移动端 RTC 架构实践</h1><p>在大语言模型进入实时交互场景之后，RTC 的角色已经发生了明显变化。它不再只是一个负责传输音频或视频的底层通道，而开始承担起 <strong>实时语音输入、模型流式响应、语音播报、多模态上下文同步以及工具调用协同</strong> 的基础设施职责。</p>
@@ -1145,1008 +2354,6 @@
         <tag>实时对话</tag>
         <tag>多模态</tag>
         <tag>音视频架构</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>从&quot;文本朗读&quot;到&quot;实时语音反馈&quot;：一套移动端 TTS 业务架构实践</title>
-    <url>/2026/04/10/TTS/</url>
-    <content><![CDATA[<h1 id="从”文本朗读”到”实时语音反馈”：一套移动端-TTS-业务架构实践"><a href="#从”文本朗读”到”实时语音反馈”：一套移动端-TTS-业务架构实践" class="headerlink" title="从”文本朗读”到”实时语音反馈”：一套移动端 TTS 业务架构实践"></a>从”文本朗读”到”实时语音反馈”：一套移动端 TTS 业务架构实践</h1><p>在很多产品里，TTS（Text To Speech）常常被理解成一个相对简单的能力：拿到一段文本，转成音频，然后播放出来。</p>
-<p>但当产品进入 AIGC、实时问答、语音助手、播客消费、可穿戴设备这些场景后，TTS 的角色会迅速变化。它不再只是一个“朗读器”，而开始承担起 <strong>实时反馈、状态编排、音频协同、设备打断、体验连续性优化</strong> 等更复杂的职责。</p>
-<p>在我们的客户端实践里，TTS 最终演变成了一套围绕“实时 AI 交互”组织起来的系统能力。本文不展开源码细节，而是从业务与架构视角，分享这套 TTS 体系是如何设计出来的，以及它解决了哪些真实问题。</p>
-<hr>
-<h2 id="一、为什么今天的-TTS-不能只被当作“朗读能力”"><a href="#一、为什么今天的-TTS-不能只被当作“朗读能力”" class="headerlink" title="一、为什么今天的 TTS 不能只被当作“朗读能力”"></a>一、为什么今天的 TTS 不能只被当作“朗读能力”</h2><p>如果只是做文章阅读、消息播报，传统 TTS 的工作方式通常是：</p>
-<ol>
-<li>准备一段完整文本；</li>
-<li>调用语音合成接口；</li>
-<li>拿到完整音频；</li>
-<li>播放结束。</li>
-</ol>
-<p>这种模型很适合离线、单次、低交互的内容播报。</p>
-<p>但在 AIGC 场景里，用户的感知路径已经变成了：</p>
-<blockquote>
-<p>用户提问 → 模型流式生成回答 → 回答一边出现，一边播报 → 用户可随时打断 → 系统再进入下一轮交互</p>
-</blockquote>
-<p>一旦交互链路变成这样，TTS 需要面对的问题就完全不同了：</p>
-<ul>
-<li>文本不是一次性返回，而是流式增长；</li>
-<li>播报不能等全部生成完再开始，否则反馈太慢；</li>
-<li>播放时要和 ASR、音频会话、音乐播放、外设收音互相协调；</li>
-<li>播报过程中用户可能会打断；</li>
-<li>在播客、多角色内容中，还要兼顾连续性和听感。</li>
-</ul>
-<p>所以，真正支撑用户体验的，已经不只是“会不会读”，而是：</p>
-<blockquote>
-<p><strong>TTS 能不能成为实时 AI 交互中的一个自然反馈环节。</strong></p>
-</blockquote>
-<hr>
-<h2 id="二、我们到底在解决什么问题"><a href="#二、我们到底在解决什么问题" class="headerlink" title="二、我们到底在解决什么问题"></a>二、我们到底在解决什么问题</h2><p>把 TTS 放进真实业务里，最常见的问题通常来自以下几个方面。</p>
-<h3 id="1-反馈太慢"><a href="#1-反馈太慢" class="headerlink" title="1. 反馈太慢"></a>1. 反馈太慢</h3><p>如果必须等整段回答结束才开始播报，用户会明显感觉系统“在思考”，而不是“在对话”。</p>
-<h3 id="2-半句、重复、漏播"><a href="#2-半句、重复、漏播" class="headerlink" title="2. 半句、重复、漏播"></a>2. 半句、重复、漏播</h3><p>大模型流式返回时，文本往往是不断变长的整段内容，而不是天然按句增量返回。如果直接拿流式文本去播，很容易出现：</p>
-<ul>
-<li>半句就开始读；</li>
-<li>同一段内容重复读；</li>
-<li>尾句因为 <code>isFinal</code> 时机不同而漏播。</li>
-</ul>
-<h3 id="3-播放和收音打架"><a href="#3-播放和收音打架" class="headerlink" title="3. 播放和收音打架"></a>3. 播放和收音打架</h3><p>在语音问答场景里，如果播报时收音还开着，就可能出现“自己说给自己听”的问题，造成误触发或识别污染。</p>
-<h3 id="4-打断不彻底"><a href="#4-打断不彻底" class="headerlink" title="4. 打断不彻底"></a>4. 打断不彻底</h3><p>用户打断上一轮回复后，如果只是停本地播放器，但设备端或链路侧还积压着旧音频 buffer，残音仍然会被听到，体验会非常差。</p>
-<h3 id="5-多业务并存时资源冲突"><a href="#5-多业务并存时资源冲突" class="headerlink" title="5. 多业务并存时资源冲突"></a>5. 多业务并存时资源冲突</h3><p>当问答、播客、音乐、眼镜等场景共存时，谁该优先播、谁该暂停、谁该接管音频通道，必须有明确策略。</p>
-<p>这些问题表面上看是“播报问题”，本质上其实是 <strong>实时体验编排问题</strong>。</p>
-<hr>
-<h2 id="三、一个可落地的-TTS-架构，应该怎么分层"><a href="#三、一个可落地的-TTS-架构，应该怎么分层" class="headerlink" title="三、一个可落地的 TTS 架构，应该怎么分层"></a>三、一个可落地的 TTS 架构，应该怎么分层</h2><p>为了让 TTS 从“能力点”升级为“业务系统”，我们最终把它拆成了四层。</p>
-<pre><code class="mermaid">flowchart TD
-    A[业务触发层]
-    B[TTS 编排层]
-    C[合成与播放层]
-    D[系统与设备协同层]
-
-    A --&gt; B
-    B --&gt; C
-    C --&gt; D</code></pre>
-
-<h3 id="1-业务触发层"><a href="#1-业务触发层" class="headerlink" title="1. 业务触发层"></a>1. 业务触发层</h3><p>这一层决定“什么时候该播”。</p>
-<p>比如：</p>
-<ul>
-<li>AIGC 问答回答是否需要自动朗读；</li>
-<li>用户是否主动点击播放；</li>
-<li>当前是不是语音对话态；</li>
-<li>当前是否处于后台、跳转态或外设占用态。</li>
-</ul>
-<p>这一层的核心目标不是发音，而是 <strong>做业务判断和资源仲裁</strong>。</p>
-<h3 id="2-TTS-编排层"><a href="#2-TTS-编排层" class="headerlink" title="2. TTS 编排层"></a>2. TTS 编排层</h3><p>这是整套体系的关键。它负责：</p>
-<ul>
-<li>流式文本增量处理；</li>
-<li>句子切分；</li>
-<li>合成请求调度；</li>
-<li>播放状态推进；</li>
-<li>打断与重置；</li>
-<li>针对不同场景采取不同策略。</li>
-</ul>
-<p>如果说业务层决定“要不要播”，那么编排层决定的是：</p>
-<blockquote>
-<p><strong>怎么播、播到哪、下一句什么时候进来、出了问题怎么处理。</strong></p>
-</blockquote>
-<h3 id="3-合成与播放层"><a href="#3-合成与播放层" class="headerlink" title="3. 合成与播放层"></a>3. 合成与播放层</h3><p>这一层做两件事：</p>
-<ul>
-<li>把文本转换为流式音频；</li>
-<li>把音频平滑地播放出来。</li>
-</ul>
-<p>这里最重要的不是单次播放，而是要支持：</p>
-<ul>
-<li>边收边播；</li>
-<li>按句推进；</li>
-<li>精确知道当前播到哪里；</li>
-<li>为上层提供“准备播放 &#x2F; 播放中 &#x2F; 播放结束 &#x2F; 失败”等状态。</li>
-</ul>
-<h3 id="4-系统与设备协同层"><a href="#4-系统与设备协同层" class="headerlink" title="4. 系统与设备协同层"></a>4. 系统与设备协同层</h3><p>这一层处理更贴近终端真实环境的问题：</p>
-<ul>
-<li>音频会话切换；</li>
-<li>电话&#x2F;系统打断恢复；</li>
-<li>音乐共存；</li>
-<li>蓝牙耳机路由；</li>
-<li>外设缓冲清理；</li>
-<li>RTC 下行音频接力。</li>
-</ul>
-<p>它决定了这套 TTS 能不能在真实设备上稳定工作，而不是只在理想流程里跑通。</p>
-<hr>
-<h2 id="四、AIGC-IM-场景下，TTS-为什么必须是“流式”的"><a href="#四、AIGC-IM-场景下，TTS-为什么必须是“流式”的" class="headerlink" title="四、AIGC &#x2F; IM 场景下，TTS 为什么必须是“流式”的"></a>四、AIGC &#x2F; IM 场景下，TTS 为什么必须是“流式”的</h2><p>这是最能代表当前 TTS 变化的场景。</p>
-<p>设想一个用户在 IM 问答页提问：</p>
-<blockquote>
-<p>“帮我介绍下目前 AI Agent 的发展。”</p>
-</blockquote>
-<p>云端模型不会一次性返回完整回答，而更可能像这样流式输出：</p>
-<ol>
-<li><code>AI Agent 正从单轮问答能力，</code></li>
-<li><code>AI Agent 正从单轮问答能力，逐步发展为具备规划、调用工具和执行复杂任务的智能体系统。</code></li>
-<li>第 3 包文本不再增长，但会携带“本轮结束”的信号。</li>
-</ol>
-<p>这时如果客户端直接把每一包文本都丢给播放器，会产生两个问题：</p>
-<ul>
-<li>第二包会把第一包内容重复播一遍；</li>
-<li>尾包可能没有新增文本，但又必须保证这轮播报被正确收尾。</li>
-</ul>
-<p>因此，我们在 TTS 编排层里做了三件关键事情。</p>
-<h3 id="1-只处理“新增文本”"><a href="#1-只处理“新增文本”" class="headerlink" title="1. 只处理“新增文本”"></a>1. 只处理“新增文本”</h3><p>不是拿整段文本直接播，而是和上一轮文本做比较，只提取这次真正新增的部分。</p>
-<h3 id="2-只在“适合播”的时候入队"><a href="#2-只在“适合播”的时候入队" class="headerlink" title="2. 只在“适合播”的时候入队"></a>2. 只在“适合播”的时候入队</h3><p>新增内容还要继续经过过滤：</p>
-<ul>
-<li>纯换行不播；</li>
-<li>纯标点不播；</li>
-<li>半句暂缓，等后续内容补齐。</li>
-</ul>
-<h3 id="3-用尾包信号做收尾补偿"><a href="#3-用尾包信号做收尾补偿" class="headerlink" title="3. 用尾包信号做收尾补偿"></a>3. 用尾包信号做收尾补偿</h3><p>最后一包即使没有继续增长，也要让系统知道：</p>
-<ul>
-<li>本轮回答已经结束；</li>
-<li>如果还有尾句没播，需要补齐；</li>
-<li>整轮播报结束后，状态要回到空闲态。</li>
-</ul>
-<p>从用户角度看，这意味着系统表现出来的是：</p>
-<blockquote>
-<p>回答不是“一下子说完”，而是像真人一样，边组织语言边开始反馈。</p>
-</blockquote>
-<p>这正是“实时感”的来源。</p>
-<hr>
-<h2 id="五、一个真实的-AIGC-IM-播报流程，应该长什么样"><a href="#五、一个真实的-AIGC-IM-播报流程，应该长什么样" class="headerlink" title="五、一个真实的 AIGC &#x2F; IM 播报流程，应该长什么样"></a>五、一个真实的 AIGC &#x2F; IM 播报流程，应该长什么样</h2><p>为了更直观地理解这套设计，我们把整个流程还原成一条业务链路。</p>
-<h3 id="阶段一：业务层决定是否可以播"><a href="#阶段一：业务层决定是否可以播" class="headerlink" title="阶段一：业务层决定是否可以播"></a>阶段一：业务层决定是否可以播</h3><p>当 AIGC 响应开始流式返回时，业务层首先不会急着播，而会判断：</p>
-<ul>
-<li>当前用户是否开启了语音播报；</li>
-<li>当前是不是游客模式；</li>
-<li>是否存在外设正在占用播报能力；</li>
-<li>当前页面是否处于适合播报的前台场景；</li>
-<li>当前是否需要等待更高优先级的展示逻辑完成。</li>
-</ul>
-<p>也就是说，TTS 的第一步不是合成，而是 <strong>做选择</strong>。</p>
-<h3 id="阶段二：流式文本进入-TTS-编排层"><a href="#阶段二：流式文本进入-TTS-编排层" class="headerlink" title="阶段二：流式文本进入 TTS 编排层"></a>阶段二：流式文本进入 TTS 编排层</h3><p>一旦业务层判断“可以播”，文本就会进入编排层。</p>
-<p>此时编排层并不会把整段文本立即送去合成，而是会：</p>
-<ol>
-<li>对比上一轮已处理文本；</li>
-<li>提取新增部分；</li>
-<li>判断是否为有效句子；</li>
-<li>把可播内容拆成句子，放入待合成队列。</li>
-</ol>
-<p>这一步实际上把“模型文本流”转换成了“播报任务流”。</p>
-<h3 id="阶段三：句子级流式合成启动"><a href="#阶段三：句子级流式合成启动" class="headerlink" title="阶段三：句子级流式合成启动"></a>阶段三：句子级流式合成启动</h3><p>待播句子一旦准备好，就会启动流式合成会话。</p>
-<p>这里和传统 TTS 最大的不同是：</p>
-<ul>
-<li>不是一段文本对应一个完整音频文件；</li>
-<li>而是一句句文本逐步送入；</li>
-<li>音频也会一点点返回。</li>
-</ul>
-<p>因此整个过程更像“推流 + 拉流”的组合，而不是“请求 + 下载”。</p>
-<h3 id="阶段四：音频边回边播"><a href="#阶段四：音频边回边播" class="headerlink" title="阶段四：音频边回边播"></a>阶段四：音频边回边播</h3><p>当音频开始回流后，播放层会立即将其送入缓冲队列，驱动本地播放器开始输出。</p>
-<p>这时 TTS 不再是“离线产物”，而成了一个实时媒体流。</p>
-<p>它带来的好处很直接：</p>
-<ul>
-<li>首次语音反馈更快；</li>
-<li>整体回答更自然；</li>
-<li>用户更容易感知到“系统已经开始响应我了”。</li>
-</ul>
-<h3 id="阶段五：播放状态反向驱动-UI"><a href="#阶段五：播放状态反向驱动-UI" class="headerlink" title="阶段五：播放状态反向驱动 UI"></a>阶段五：播放状态反向驱动 UI</h3><p>在问答页里，TTS 不只是声音能力，它还会反向驱动 UI：</p>
-<ul>
-<li>当前回答卡片进入“朗读中”；</li>
-<li>播放结束后按钮恢复默认态；</li>
-<li>播放失败时给出兜底提示；</li>
-<li>某些情况下还会影响页面休眠策略。</li>
-</ul>
-<p>所以最终呈现给用户的不是“音频自己播”，而是一个 <strong>声音与界面状态同步变化的交互结果</strong>。</p>
-<h3 id="结合代码理解：这条链路在工程里通常会怎么写"><a href="#结合代码理解：这条链路在工程里通常会怎么写" class="headerlink" title="结合代码理解：这条链路在工程里通常会怎么写"></a>结合代码理解：这条链路在工程里通常会怎么写</h3><h4 id="1）业务层先决定这包-spokenText-是否应该触发-TTS"><a href="#1）业务层先决定这包-spokenText-是否应该触发-TTS" class="headerlink" title="1）业务层先决定这包 spokenText 是否应该触发 TTS"></a>1）业务层先决定这包 <code>spokenText</code> 是否应该触发 TTS</h4><figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">handleStreamingMessage</span>(<span class="keyword">_</span> <span class="params">message</span>: <span class="type">ChatMessage</span>, <span class="params">index</span>: <span class="type">Int</span>) &#123;</span><br><span class="line">    <span class="keyword">let</span> spokenText <span class="operator">=</span> message.spokenText</span><br><span class="line">    <span class="keyword">let</span> isFinal <span class="operator">=</span> message.isFinal</span><br><span class="line"></span><br><span class="line">    <span class="keyword">guard</span> <span class="operator">!</span>spokenText.isEmpty <span class="keyword">else</span> &#123; <span class="keyword">return</span> &#125;</span><br><span class="line"></span><br><span class="line">    firstPacketIndex <span class="operator">+=</span> <span class="number">1</span></span><br><span class="line">    <span class="keyword">if</span> firstPacketIndex <span class="operator">==</span> <span class="number">0</span> &#123;</span><br><span class="line">        cachedSpokenText <span class="operator">=</span> <span class="string">&quot;&quot;</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> audioSwitchOn <span class="operator">&amp;&amp;</span> canStartTTS <span class="operator">&amp;&amp;</span> <span class="operator">!</span>isInOtherVoiceScene &#123;</span><br><span class="line">        startTTS(</span><br><span class="line">            text: spokenText,</span><br><span class="line">            isFirst: firstPacketIndex <span class="operator">==</span> <span class="number">0</span>,</span><br><span class="line">            isFinal: isFinal,</span><br><span class="line">            currentIndex: index</span><br><span class="line">        )</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        cachedSpokenText <span class="operator">=</span> spokenText</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>这段逻辑对应的核心思想是：</p>
-<ul>
-<li>先拿到流式返回的 <code>spokenText</code>；</li>
-<li>再判断当前是否允许播报；</li>
-<li>能播就立刻进入 TTS；</li>
-<li>不能播就先缓存，等合适时机再补播。</li>
-</ul>
-<p>也就是说，在真实工程里，<strong>TTS 的入口一定是业务判断之后的结果</strong>，而不是模型一来文本就无条件往下播。</p>
-<h4 id="2）编排层负责把“不断变长的整段文本”变成“可播的新增句子”"><a href="#2）编排层负责把“不断变长的整段文本”变成“可播的新增句子”" class="headerlink" title="2）编排层负责把“不断变长的整段文本”变成“可播的新增句子”"></a>2）编排层负责把“不断变长的整段文本”变成“可播的新增句子”</h4><figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">addSentence</span>(<span class="params">text</span>: <span class="type">String</span>, <span class="params">isFirstPackage</span>: <span class="type">Bool</span>, <span class="params">isFinal</span>: <span class="type">Bool</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> isFirstPackage &#123;</span><br><span class="line">        resetPlaybackContext()</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> text.count <span class="operator">&gt;</span> lastSpokenText.count &#123;</span><br><span class="line">        <span class="keyword">let</span> delta <span class="operator">=</span> text.suffix(text.count <span class="operator">-</span> lastSpokenText.count)</span><br><span class="line">        lastSpokenText <span class="operator">=</span> text</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> isValid(delta) <span class="operator">||</span> isFinal &#123;</span><br><span class="line">            splitAndEnqueue(delta, isFinal: isFinal)</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            rollbackLastSpokenText(by: delta.count)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> <span class="operator">!</span>isReceiving <span class="operator">&amp;&amp;</span> stream <span class="operator">==</span> <span class="literal">nil</span> &#123;</span><br><span class="line">        startStreamSynthesis()</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>这一层解决的是流式 TTS 里最关键的问题：</p>
-<ul>
-<li>大模型返回的是整段增长文本；</li>
-<li>TTS 真正需要的是“这次新增了什么”；</li>
-<li>新增内容还得进一步判断是否值得播、是否已经成句。</li>
-</ul>
-<p>如果没有这层编排，最常见的问题就是重复播、半句播、尾句漏播。</p>
-<h4 id="3）合成与播放层负责把文本流真正变成“边回边播”的音频流"><a href="#3）合成与播放层负责把文本流真正变成“边回边播”的音频流" class="headerlink" title="3）合成与播放层负责把文本流真正变成“边回边播”的音频流"></a>3）合成与播放层负责把文本流真正变成“边回边播”的音频流</h4><figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">startStreamSynthesis</span>() &#123;</span><br><span class="line">    <span class="keyword">let</span> request <span class="operator">=</span> <span class="type">SynthRequest</span>(</span><br><span class="line">        speaker: defaultSpeaker,</span><br><span class="line">        scene: .im,</span><br><span class="line">        metadata: buildRuntimeMetadata()</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    stream <span class="operator">=</span> speechEngine.createStream()</span><br><span class="line">    stream<span class="operator">?</span>.config(request)</span><br><span class="line">    stream<span class="operator">?</span>.send(nextSentence())</span><br><span class="line"></span><br><span class="line">    receiveLoop &#123; audioChunk <span class="keyword">in</span></span><br><span class="line">        player.play(audioChunk)</span><br><span class="line">    &#125; onFinish: &#123;</span><br><span class="line">        updatePlayerStatus(.finished)</span><br><span class="line">    &#125; onError: &#123; error <span class="keyword">in</span></span><br><span class="line">        updatePlayerStatus(.failed)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>这里的重点不在于具体 SDK 接口，而在于链路形态：</p>
-<ul>
-<li>先创建流式合成会话；</li>
-<li>再把句子送给合成引擎；</li>
-<li>音频不是一次性下载，而是 chunk 级回流；</li>
-<li>播放器收到 chunk 后立即开始输出；</li>
-<li>状态回调继续反向驱动业务层。</li>
-</ul>
-<p>从架构视角看，这里真正建立起来的是一条：</p>
-<blockquote>
-<p><strong>文本流 → 合成流 → 音频流 → 页面状态流</strong></p>
-</blockquote>
-<p>而不是单纯一次函数调用。</p>
-<h3 id="一个来自项目实践的-AIGC-IM-全流程案例"><a href="#一个来自项目实践的-AIGC-IM-全流程案例" class="headerlink" title="一个来自项目实践的 AIGC &#x2F; IM 全流程案例"></a>一个来自项目实践的 AIGC &#x2F; IM 全流程案例</h3><p>如果把这套设计放回真实项目，一个典型的 AIGC &#x2F; IM TTS 全流程大致会是这样：</p>
-<h4 id="第一步：用户发起问题"><a href="#第一步：用户发起问题" class="headerlink" title="第一步：用户发起问题"></a>第一步：用户发起问题</h4><p>用户在 IM 问答页输入：</p>
-<blockquote>
-<p>“帮我介绍下目前 AI Agent 的发展。”</p>
-</blockquote>
-<p>此时页面进入“等待回答”状态，模型开始以流式方式返回 <code>displayText</code> 和 <code>spokenText</code>。</p>
-<h4 id="第二步：业务层先处理流式消息，而不是直接播放"><a href="#第二步：业务层先处理流式消息，而不是直接播放" class="headerlink" title="第二步：业务层先处理流式消息，而不是直接播放"></a>第二步：业务层先处理流式消息，而不是直接播放</h4><p>每收到一包消息，页面层会同步更新：</p>
-<ul>
-<li>用于展示的文本；</li>
-<li>用于播报的文本；</li>
-<li>本轮是否结束；</li>
-<li>当前是否允许启动 TTS。</li>
-</ul>
-<p>这一步的职责是“接消息”，不是“播消息”。</p>
-<h4 id="第三步：如果满足条件，就把-spokenText-交给-TTS-编排层"><a href="#第三步：如果满足条件，就把-spokenText-交给-TTS-编排层" class="headerlink" title="第三步：如果满足条件，就把 spokenText 交给 TTS 编排层"></a>第三步：如果满足条件，就把 <code>spokenText</code> 交给 TTS 编排层</h4><p>当满足以下条件时，TTS 才真正启动：</p>
-<ul>
-<li>用户开启了语音播报；</li>
-<li>当前不是游客或受限态；</li>
-<li>当前没有被其它语音场景占用；</li>
-<li>当前不需要等待更高优先级的展示流程。</li>
-</ul>
-<p>如果此时不适合立刻播，项目里会先缓存 <code>spokenText</code>，而不是丢弃。</p>
-<h4 id="第四步：编排层提取增量、切句、入队"><a href="#第四步：编排层提取增量、切句、入队" class="headerlink" title="第四步：编排层提取增量、切句、入队"></a>第四步：编排层提取增量、切句、入队</h4><p>真实项目里，TTS 底座会把本轮整段文本和上一轮文本比较，只拿出新增部分，再做：</p>
-<ul>
-<li>无效文本过滤；</li>
-<li>标点切句；</li>
-<li>尾句补偿；</li>
-<li>待播队列入队。</li>
-</ul>
-<p>这一层做完之后，系统手里拿到的已经不是“模型吐出来的一段字符串”，而是一组 <strong>可调度的播报单元</strong>。</p>
-<h4 id="第五步：句子级合成会话启动"><a href="#第五步：句子级合成会话启动" class="headerlink" title="第五步：句子级合成会话启动"></a>第五步：句子级合成会话启动</h4><p>每当待播队列中有可播句子，系统就会：</p>
-<ol>
-<li>创建流式合成会话；</li>
-<li>注入运行时上下文（设备、环境、用户态等）；</li>
-<li>发送当前句子；</li>
-<li>开始接收音频回流。</li>
-</ol>
-<p>这一步意味着 TTS 已经从业务层正式进入媒体层。</p>
-<h4 id="第六步：音频-chunk-回流，本地边收边播"><a href="#第六步：音频-chunk-回流，本地边收边播" class="headerlink" title="第六步：音频 chunk 回流，本地边收边播"></a>第六步：音频 chunk 回流，本地边收边播</h4><p>真实播放不是“等整句音频完整返回再播”，而是：</p>
-<ul>
-<li>先收到第一批音频 chunk；</li>
-<li>立即推入缓冲区；</li>
-<li>播放器开始输出；</li>
-<li>后续 chunk 持续补进来。</li>
-</ul>
-<p>用户感知到的是“回答一边生成，一边开始读”，这也是整个体验自然度最关键的一环。</p>
-<h4 id="第七步：播放状态反向驱动-AIGC-页-UI"><a href="#第七步：播放状态反向驱动-AIGC-页-UI" class="headerlink" title="第七步：播放状态反向驱动 AIGC 页 UI"></a>第七步：播放状态反向驱动 AIGC 页 UI</h4><p>在项目实践里，TTS 状态通常会继续影响：</p>
-<ul>
-<li>当前回答气泡是否显示“朗读中”；</li>
-<li>播放结束后按钮是否恢复；</li>
-<li>播放失败时是否提示用户重试；</li>
-<li>页面是否需要临时禁止自动熄屏。</li>
-</ul>
-<p>也就是说，TTS 不是只负责出声，它还负责把“声音已经发生”这件事同步回交互层。</p>
-<h4 id="第八步：若中途被打断，整条链路要一起收口"><a href="#第八步：若中途被打断，整条链路要一起收口" class="headerlink" title="第八步：若中途被打断，整条链路要一起收口"></a>第八步：若中途被打断，整条链路要一起收口</h4><p>如果用户在此时：</p>
-<ul>
-<li>主动停止播放；</li>
-<li>切到其它语音业务；</li>
-<li>眼镜等外设开始接管语音通道；</li>
-</ul>
-<p>那真实项目里不会只做“播放器 stop”，而是要同时做：</p>
-<ul>
-<li>停掉当前合成流；</li>
-<li>清空本地缓存；</li>
-<li>重置句子队列与索引；</li>
-<li>把页面状态回到安全态；</li>
-<li>必要时通知设备侧清 buffer。</li>
-</ul>
-<p>这也是为什么在工程实践里，TTS 一定要被当成“链路能力”而不是“播放器能力”。</p>
-<h3 id="用一句话概括这个实践全流程"><a href="#用一句话概括这个实践全流程" class="headerlink" title="用一句话概括这个实践全流程"></a>用一句话概括这个实践全流程</h3><p>如果把这套项目实践压缩成一句话，它其实就是：</p>
-<blockquote>
-<p><strong>AIGC 页面收到流式 <code>spokenText</code> → 业务层做场景仲裁 → 编排层提取增量并切句 → 媒体层启动流式合成 → 音频 chunk 边回边播 → 状态继续反向驱动 UI → 被打断时整条链路统一收口。</strong></p>
-</blockquote>
-<p>这条链路之所以重要，不是因为它让系统“能播声音”，而是因为它让 AIGC &#x2F; IM 场景中的语音反馈真正具备了实时性、连续性和可控性。</p>
-<hr>
-<h2 id="六、为什么有些回答不能“马上播”"><a href="#六、为什么有些回答不能“马上播”" class="headerlink" title="六、为什么有些回答不能“马上播”"></a>六、为什么有些回答不能“马上播”</h2><p>在 AIGC 场景里，回答并不总是简单的纯文本输出。有些回答还会伴随：</p>
-<ul>
-<li>推理过程；</li>
-<li>工作流内容；</li>
-<li>分阶段展示；</li>
-<li>多模态内容生成。</li>
-</ul>
-<p>这意味着，文本虽然到了，但播报不一定应该立即开始。</p>
-<p>在我们的设计里，TTS 的启动会受到展示节奏影响：</p>
-<ul>
-<li>如果当前内容仍在更适合“先看后听”的阶段，播报会被延后；</li>
-<li>如果某段流程需要先把内容组织完整，再进入语音反馈，那么文本会先被缓存；</li>
-<li>等展示层完成关键阶段后，再统一触发播报。</li>
-</ul>
-<p>这背后的核心原则是：</p>
-<blockquote>
-<p><strong>语音反馈要服务于整体体验，而不是机械地追求“文本一到就播”。</strong></p>
-</blockquote>
-<p>这也是为什么今天的 TTS 更像一个业务编排组件，而不是传统意义上的“播放器插件”。</p>
-<hr>
-<h2 id="七、TTS-为什么一定要参与状态机设计"><a href="#七、TTS-为什么一定要参与状态机设计" class="headerlink" title="七、TTS 为什么一定要参与状态机设计"></a>七、TTS 为什么一定要参与状态机设计</h2><p>如果产品只是内容朗读，TTS 通常不需要复杂状态机。</p>
-<p>但在语音问答中，TTS 往往是整个交互状态链路中的一个核心节点。</p>
-<p>典型状态可能包括：</p>
-<ul>
-<li>空闲；</li>
-<li>识别中；</li>
-<li>思考中；</li>
-<li>播报中；</li>
-<li>暂停；</li>
-<li>失败；</li>
-<li>被打断。</li>
-</ul>
-<p>TTS 一旦开始播放，系统通常需要同步做两件事：</p>
-<ol>
-<li>暂停收音，避免回声和误识别；</li>
-<li>将交互态切到“播报中”，让 UI 和用户预期保持一致。</li>
-</ol>
-<p>而当播放结束，系统又要继续做两件事：</p>
-<ol>
-<li>回到空闲或聆听态；</li>
-<li>重新准备下一轮收音。</li>
-</ol>
-<p>因此，TTS 在实时语音产品里更像是：</p>
-<blockquote>
-<p><strong>一段会改变系统状态的媒体行为，而不是一个独立的输出动作。</strong></p>
-</blockquote>
-<hr>
-<h2 id="八、除了-AIGC，播客场景又为什么更复杂"><a href="#八、除了-AIGC，播客场景又为什么更复杂" class="headerlink" title="八、除了 AIGC，播客场景又为什么更复杂"></a>八、除了 AIGC，播客场景又为什么更复杂</h2><p>如果说 AIGC 问答解决的是“实时反馈”，那播客类场景解决的则是“连续听感”。</p>
-<p>在这类场景里，TTS 会遇到另外几类问题：</p>
-<ul>
-<li>多角色发言如何切换音色；</li>
-<li>当前段落播完后，下一段如何无缝接上；</li>
-<li>当前条目接近播完时，是否应该提前准备下一条；</li>
-<li>当中途失败时，是整条失败还是句子级重试。</li>
-</ul>
-<p>这类问题的本质不是“能不能播”，而是：</p>
-<blockquote>
-<p><strong>能不能播得连续、自然、像一个完整节目，而不是一堆断开的语音片段。</strong></p>
-</blockquote>
-<p>因此，在播客场景中，TTS 编排层往往会引入更多策略：</p>
-<ul>
-<li>句子级推进；</li>
-<li>角色级状态；</li>
-<li>预缓存下一段；</li>
-<li>局部失败重试；</li>
-<li>当前条和下一条之间的衔接时机控制。</li>
-</ul>
-<p>这也是为什么，同样是 TTS，播客场景和 AIGC 问答场景在实现重点上会完全不同。</p>
-<hr>
-<h2 id="九、为什么“打断”是-TTS-架构里必须单独设计的能力"><a href="#九、为什么“打断”是-TTS-架构里必须单独设计的能力" class="headerlink" title="九、为什么“打断”是 TTS 架构里必须单独设计的能力"></a>九、为什么“打断”是 TTS 架构里必须单独设计的能力</h2><p>在语音助手场景里，打断不是异常，而是高频行为。</p>
-<p>用户经常会在系统播报过程中：</p>
-<ul>
-<li>直接开口打断；</li>
-<li>切换到另一个语音业务；</li>
-<li>连接外设；</li>
-<li>主动点击停止。</li>
-</ul>
-<p>如果打断只是停掉当前播放器，往往还不够。</p>
-<p>真正的问题在于，链路中可能还有很多“未消费完的内容”：</p>
-<ul>
-<li>本地缓冲里的音频；</li>
-<li>服务侧还在回流的数据；</li>
-<li>外设侧尚未播完的 buffer；</li>
-<li>UI 层仍处于播放态的状态残留。</li>
-</ul>
-<p>因此，一个有效的打断机制通常要同时完成：</p>
-<ol>
-<li>停止当前合成流；</li>
-<li>停止本地播放；</li>
-<li>清空本地音频缓存；</li>
-<li>必要时通知设备侧清空 buffer；</li>
-<li>重置句子队列和播放索引；</li>
-<li>把业务状态回到可恢复的安全态。</li>
-</ol>
-<p>只有这样，用户才会真正感觉到“我刚才已经打断成功了”。</p>
-<hr>
-<h2 id="十、当-TTS-进入外设和-RTC-场景，问题又变了"><a href="#十、当-TTS-进入外设和-RTC-场景，问题又变了" class="headerlink" title="十、当 TTS 进入外设和 RTC 场景，问题又变了"></a>十、当 TTS 进入外设和 RTC 场景，问题又变了</h2><p>在手机本地扬声器播报时，TTS 主要解决的是“生成并播放”。</p>
-<p>但在眼镜、车载、耳机等外设场景里，TTS 的定位会进一步变化。</p>
-<p>此时更常见的链路是：</p>
-<blockquote>
-<p>外设采音 → App 作为桥接层上传 → 云端理解与生成 → 云端返回 TTS 音频 → App 转发给外设播放</p>
-</blockquote>
-<p>在这条链路中，App 不再只是最终播放端，更像是 <strong>实时音频与事件的编排中心</strong>。</p>
-<p>这时两个问题会变得特别重要。</p>
-<h3 id="1-上行音频不能丢"><a href="#1-上行音频不能丢" class="headerlink" title="1. 上行音频不能丢"></a>1. 上行音频不能丢</h3><p>设备唤醒后，用户第一句话往往最关键。但 RTC 会话未必已经建好。</p>
-<p>如果此时没有预缓存，上行首包语音就可能直接丢失，表现为：</p>
-<ul>
-<li>首词缺失；</li>
-<li>识别不完整；</li>
-<li>用户觉得“设备没听见”。</li>
-</ul>
-<h3 id="2-下行音频必须支持-clearBuffer"><a href="#2-下行音频必须支持-clearBuffer" class="headerlink" title="2. 下行音频必须支持 clearBuffer"></a>2. 下行音频必须支持 clearBuffer</h3><p>如果上一轮播报还在设备缓冲区里，而新一轮会话已经开始，仅仅停本地播放是不够的。</p>
-<p>因此，下行音频事件最好天然带有“清 buffer”的语义，业务层收到后可以立刻通知外设清理积压内容。</p>
-<p>这也是为什么，在外设场景里，TTS 不再只是一个内容生成问题，而是：</p>
-<blockquote>
-<p><strong>一条需要和 RTC、设备控制、打断机制一起设计的实时媒体链路。</strong></p>
-</blockquote>
-<hr>
-<h2 id="十一、为什么音频会话管理是这套架构成立的前提"><a href="#十一、为什么音频会话管理是这套架构成立的前提" class="headerlink" title="十一、为什么音频会话管理是这套架构成立的前提"></a>十一、为什么音频会话管理是这套架构成立的前提</h2><p>很多人讨论 TTS 时，会把注意力集中在“语音合成”上，但在移动端，真正影响稳定性的往往是音频会话。</p>
-<p>因为一个真实产品需要同时面对：</p>
-<ul>
-<li>录音；</li>
-<li>播报；</li>
-<li>音乐播放；</li>
-<li>蓝牙耳机；</li>
-<li>电话打断；</li>
-<li>前后台切换。</li>
-</ul>
-<p>如果音频会话切换策略不清晰，就很容易出现这些问题：</p>
-<ul>
-<li>有文本但没声音；</li>
-<li>播报走错了输出设备；</li>
-<li>收音和播放互相抢占；</li>
-<li>电话结束后链路恢复不了。</li>
-</ul>
-<p>所以在我们的实践里，音频会话不是 TTS 的附属配置，而是核心基础设施。</p>
-<p>只有把“录音态”和“播放态”切换设计清楚，TTS 才能真正进入复杂业务场景。</p>
-<hr>
-<h2 id="十二、可观测性为什么必须从第一天就设计进去"><a href="#十二、可观测性为什么必须从第一天就设计进去" class="headerlink" title="十二、可观测性为什么必须从第一天就设计进去"></a>十二、可观测性为什么必须从第一天就设计进去</h2><p>TTS 这类实时能力上线后，最难排查的问题往往不是功能错误，而是体验问题：</p>
-<ul>
-<li>为什么这次播报感觉慢了半秒？</li>
-<li>为什么明明合成成功了，用户还是没听见？</li>
-<li>为什么打断有时有效，有时有残音？</li>
-<li>为什么某些网络环境下播报卡顿？</li>
-</ul>
-<p>如果没有可观测性，这些问题几乎无法复盘。</p>
-<p>因此我们比较看重以下几类指标：</p>
-<h3 id="1-生命周期指标"><a href="#1-生命周期指标" class="headerlink" title="1. 生命周期指标"></a>1. 生命周期指标</h3><ul>
-<li>合成会话启动成功率；</li>
-<li>播放成功率；</li>
-<li>中断原因分布；</li>
-<li>会话结束原因分布。</li>
-</ul>
-<h3 id="2-时延指标"><a href="#2-时延指标" class="headerlink" title="2. 时延指标"></a>2. 时延指标</h3><ul>
-<li>从文本到首包音频的耗时；</li>
-<li>从回答结束到播报结束的耗时；</li>
-<li>音频回包间隔；</li>
-<li>外设链路的转发时延。</li>
-</ul>
-<h3 id="3-环境指标"><a href="#3-环境指标" class="headerlink" title="3. 环境指标"></a>3. 环境指标</h3><ul>
-<li>当前网络类型；</li>
-<li>当前音频路由；</li>
-<li>当前前后台状态；</li>
-<li>当前场景类型。</li>
-</ul>
-<p>只有把这些指标建起来，TTS 才能从“可用”走向“稳定”。</p>
-<hr>
-<h2 id="十三、这套-TTS-架构带来的核心价值是什么"><a href="#十三、这套-TTS-架构带来的核心价值是什么" class="headerlink" title="十三、这套 TTS 架构带来的核心价值是什么"></a>十三、这套 TTS 架构带来的核心价值是什么</h2><p>回到最初的问题：我们为什么要把一个看似简单的语音播报能力，做成一套完整的业务架构？</p>
-<p>答案其实很直接。</p>
-<p>因为在今天的 AI 产品里，TTS 早就不只是把文本读出来，它承担的是：</p>
-<h3 id="1-更快的反馈感"><a href="#1-更快的反馈感" class="headerlink" title="1. 更快的反馈感"></a>1. 更快的反馈感</h3><p>通过流式播报，用户更早听到系统回应，等待感大幅降低。</p>
-<h3 id="2-更自然的交互感"><a href="#2-更自然的交互感" class="headerlink" title="2. 更自然的交互感"></a>2. 更自然的交互感</h3><p>系统不是“先沉默很久，再一次性说完”，而是像对话一样，逐步回应。</p>
-<h3 id="3-更稳定的多场景适配能力"><a href="#3-更稳定的多场景适配能力" class="headerlink" title="3. 更稳定的多场景适配能力"></a>3. 更稳定的多场景适配能力</h3><p>同一套 TTS 编排能力，可以支撑：</p>
-<ul>
-<li>AIGC 问答；</li>
-<li>语音助手；</li>
-<li>播客连续播报；</li>
-<li>外设语音反馈；</li>
-<li>实时会话链路扩展。</li>
-</ul>
-<h3 id="4-更可控的打断与恢复体验"><a href="#4-更可控的打断与恢复体验" class="headerlink" title="4. 更可控的打断与恢复体验"></a>4. 更可控的打断与恢复体验</h3><p>当用户行为越来越实时，打断、切换、重入就成为常态。只有把这些视为架构问题，TTS 才不会在复杂场景里失控。</p>
-<hr>
-<h2 id="十四、最后总结：TTS-已经是“实时交互系统”的一部分"><a href="#十四、最后总结：TTS-已经是“实时交互系统”的一部分" class="headerlink" title="十四、最后总结：TTS 已经是“实时交互系统”的一部分"></a>十四、最后总结：TTS 已经是“实时交互系统”的一部分</h2><p>如果用一句话总结这次实践，我会说：</p>
-<blockquote>
-<p><strong>今天的 TTS，已经不该被理解成一个独立的语音朗读模块，而应该被看作实时 AI 交互系统中的反馈中枢。</strong></p>
-</blockquote>
-<p>它连接的是：</p>
-<ul>
-<li>模型输出；</li>
-<li>用户听觉反馈；</li>
-<li>页面状态；</li>
-<li>音频会话；</li>
-<li>外设与 RTC；</li>
-<li>打断与恢复机制。</li>
-</ul>
-<p>也正因为如此，一套真正可落地的 TTS 架构，关注点从来不只是“合成效果好不好”，而是：</p>
-<ul>
-<li>能不能更快开始；</li>
-<li>能不能自然地边说边播；</li>
-<li>能不能在复杂场景中稳定运行；</li>
-<li>能不能在被打断后快速恢复；</li>
-<li>能不能成为整个实时交互链路里可靠的一环。</li>
-</ul>
-<p>当我们从这个角度重新理解 TTS，它就不再只是”给文本配声音”，而是在产品体验层面，真正承担起了 <strong>让 AI 回答变得可感知、可打断、可持续</strong> 的责任。</p>
-<hr>
-<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
-<li><a href="https://www.bilibili.com/video/BV17U7jziEPD/">AI 语音克隆进入”零样本”时代？解析 TTS 模型四大流派与问鼎榜首的 MiniMax【硅谷101】</a> —— 硅谷101</li>
-</ul>
-]]></content>
-      <categories>
-        <category>iOS架构设计</category>
-      </categories>
-      <tags>
-        <tag>TTS</tag>
-        <tag>AI Agent</tag>
-        <tag>实时对话</tag>
-        <tag>音频架构</tag>
-        <tag>语音合成</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>AI工程范式的三次演化：Prompt Engineering → Context Engineering → Harness Engineering</title>
-    <url>/2026/04/07/ai-engineering-paradigm-evolution/</url>
-    <content><![CDATA[<p>最近有一个概念「Harness Engineering」开始兴起，看到很多堆砌概念的文章，读了没什么用。</p>
-<p>结合实际经历来理解了一下。总的来说，结论是：如果目标只是让模型在一轮对话里回答得更像样，Prompt Engineering 依然重要；但如果目标变成「让 Agent 连续几十分钟完成一个真实任务」，只优化提示词通常是不够的。很多失败并不是模型不会写，而是它不知道该看什么、能用什么、错了以后怎样自我校正。它缺少了一些运行的环境和良好的规范。</p>
-<span id="more"></span>
-
-<p>这篇文章想回答三个更具体的问题：</p>
-<ul>
-<li>Prompt Engineering、Context Engineering、Harness Engineering 分别在解决什么问题？</li>
-<li>为什么在 coding agent 场景里，后者会越来越重要？</li>
-<li>当 Agent 表现不好时，我应该怎么做？</li>
-</ul>
-<p>首先，结论是：<strong>这三者不是替代关系，而是同一套 AI 工程系统的三个层次。</strong></p>
-<ul>
-<li>Prompt 决定你如何发出任务</li>
-<li>Context 决定模型在关键时刻能看到什么</li>
-<li>Harness 决定模型在什么运行机制里完成任务</li>
-</ul>
-<p>它们的外延其实是越来越大的。</p>
-<p>当我们的目标从「答对一道题」变成「稳定完成一段工作流」，系统重心就会自然外移。我们会先发现优化 prompt 不够，再发现只补上下文也不够，最后不得不处理运行环境、反馈回路、权限边界和记录系统这些更工程化的问题。</p>
-<p>所以，这篇文章表面上是在讲三次演化，真正落点其实是一个更实用的启示：<strong>在 coding agent 场景里，很多问题并不是「prompt 还不够好」，而是我们没有把系统搭好。</strong>（我理解的 harness 工程的核心思想）</p>
-<h2 id="1-Prompt-Engineering：先把任务说清楚"><a href="#1-Prompt-Engineering：先把任务说清楚" class="headerlink" title="1. Prompt Engineering：先把任务说清楚"></a>1. Prompt Engineering：先把任务说清楚</h2><p>大多数人第一次接触 LLM，都是从 prompt 开始的。打开 ChatGPT、DeepSeek 或豆包，在输入框里写一句话，模型给你一段回答。比如，在输入框输入文字：「中国的首都是哪里」答：「北京」。这种交互方式诞生了大量的 ChatBot。它将模型的能力封装成了一个更高效的知识库、数据库、搜索引擎产品。这个阶段，AI 的核心是问答任务，即如何更好的输出用户想要的答案。</p>
-<p>这一阶段最常见的方法，基本都在解决同一件事：如何让模型更准确地理解我们的意图。所以大家都是在研究提示词技巧：</p>
-<ul>
-<li>设定身份、背景、行为的格式化方法</li>
-<li>举例子给模型，所谓 one shot&#x2F;few shot</li>
-<li>让模型一步步思考的思维链方法</li>
-<li>让模型推理行动观测的 ReAct 方法（这里已经初步演进到 agent 的概念了）</li>
-</ul>
-<p>严格一点说，Prompt Engineering 不只是「写一句更有效的话」，还包括测试、评估和迭代。它解决的是输入表达问题。</p>
-<p>但它的边界也很明确：</p>
-<ul>
-<li>它不能凭空给模型补进我们的私域知识</li>
-<li>它不能让模型知道今天的外部世界发生了什么</li>
-<li>它不能天然解决跨轮对话的持续记忆</li>
-<li>它也不能代替权限控制、执行环境和错误恢复机制</li>
-</ul>
-<p>我们对 LLM 的期待不是一个高级的数据库查询式的问答，我们希望它能处理上述事情。实际上，我们是在期待一个 Agent，而 Agent 的任务是多步执行。</p>
-<h2 id="2-Context-Engineering：决定模型在关键时刻能看到什么"><a href="#2-Context-Engineering：决定模型在关键时刻能看到什么" class="headerlink" title="2. Context Engineering：决定模型在关键时刻能看到什么"></a>2. Context Engineering：决定模型在关键时刻能看到什么</h2><p>模型是通过上下文窗口来工作的，prompt 是其中的一部分。当任务从问答变成执行，问题的重心就从「如何提问」迁移成「如何组织上下文」。</p>
-<p>这里的上下文，不只是 system prompt。凡是会进入模型视野、影响其下一步决策的信息，都可以算上下文，例如：</p>
-<ul>
-<li>提示词</li>
-<li>用户输入</li>
-<li>工具定义</li>
-<li>工具返回结果</li>
-<li>历史对话</li>
-<li>检索出的知识片段</li>
-<li>长短期记忆</li>
-<li>当前任务状态</li>
-</ul>
-<p>那么如何才能有效的组织这些信息呢？还是机械的将它们填充进来吗？肯定不是。</p>
-<h3 id="2-1-RAG：解决「模型不知道的私有知识库」"><a href="#2-1-RAG：解决「模型不知道的私有知识库」" class="headerlink" title="2.1 RAG：解决「模型不知道的私有知识库」"></a>2.1 RAG：解决「模型不知道的私有知识库」</h3><p>私域知识、产品文档、内部规范、历史记录，往往比上下文窗口大得多，不能整包塞给模型。这时候就需要先查，再把最相关的片段喂进去。</p>
-<p>RAG 的价值在于：它尽量让检索结果和任务语义相关，而不是只做字面匹配。比如同样搜索「苹果」，一斤苹果 5 块钱和一部苹果手机 8000 块都可能命中，但对当前任务有帮助的内容其实完全不同。</p>
-<p>不过，RAG 的发展也是波折的，中间火热的时候，说「RAG for everything」，模型上下文窗口一长，微调技术成熟的时候，又说「RAG is dead」。在实际的企业知识问答实践中，RAG 也总会遇到各种问题被抱怨。</p>
-<p>但从我的观察来看：</p>
-<ul>
-<li>在企业知识问答、流程文档检索、内部规范辅助这类场景里，RAG 仍然很重要</li>
-<li>在代码仓库导航、局部文件定位这类强结构化场景里，Grep、Glob、Read 这类直接操作文件系统的方式，往往比向量检索更直接</li>
-</ul>
-<p>不是 RAG 消失了，而是不同任务需要不同的增强方式。</p>
-<p>我自己做 debug agent 时就踩过这个坑。我最初尝试过把代码仓库做索引，再让 Agent 通过语义检索去找崩溃相关代码，结果召回率很低。原因是很多调试任务依赖的不是「语义相似」，而是术语、符号名、文件路径、调用链和历史改动，这些信息更适合用 grep、日志关键字和 git 记录去逼近。后来直接调用 claude code sdk，准确率一下就上去了。</p>
-<h3 id="2-2-Tools：解决「模型不知道外部世界，也不能直接行动」"><a href="#2-2-Tools：解决「模型不知道外部世界，也不能直接行动」" class="headerlink" title="2.2 Tools：解决「模型不知道外部世界，也不能直接行动」"></a>2.2 Tools：解决「模型不知道外部世界，也不能直接行动」</h3><p>如果没有工具，LLM 很像一个「缸中之脑」。它能推理，但不知道现在几点，不知道今天发生了什么，也不能亲手执行动作。</p>
-<p>所以我们给模型接工具：</p>
-<ul>
-<li>要知道时间，就接时间工具</li>
-<li>要知道现实世界信息，就接搜索或接口</li>
-<li>要改文件、跑命令、查日志，就接代码与系统工具</li>
-</ul>
-<p>这条路线持续在进化。早期很多系统靠正则匹配模型输出，再映射到某个函数；后来发展到更稳定的 function calling；再往后，为了把工具能力从某个模型服务或某个聊天客户端里解耦出来，又出现了像 MCP 这类协议层抽象。</p>
-<p>工具一多，新的问题又来了：工具描述本身会占上下文，选择错误的工具也会带来执行成本。所以现在不少系统开始做按需加载，把工具和经验封装成 skills，避免一上来把所有能力都塞给模型。</p>
-<h3 id="2-3-Memory：解决「模型每次都像第一次见你」"><a href="#2-3-Memory：解决「模型每次都像第一次见你」" class="headerlink" title="2.3 Memory：解决「模型每次都像第一次见你」"></a>2.3 Memory：解决「模型每次都像第一次见你」</h3><p>LLM 天生不是持续有状态的。当前轮次的推理，不会自动继承上一次对话的内部状态。</p>
-<p>最简单的做法，就是把之前的对话一起放回上下文。这确实有效，而且现在依然是最常见的办法。但对话一长，窗口就会被迅速吃满，于是我们又不得不面对两个更细的问题：</p>
-<ul>
-<li>哪些历史信息应该保留</li>
-<li>哪些信息应该压缩、摘要或者外置存储</li>
-</ul>
-<p>短期记忆解决连续对话，长期记忆解决跨任务偏好、固定约束和��史决策。到这里，会发现 Context Engineering 已经不是「多加几个字段」，而是在做信息编排。</p>
-<h3 id="2-4-为什么只补上下文，很多-Agent-还是做不稳"><a href="#2-4-为什么只补上下文，很多-Agent-还是做不稳" class="headerlink" title="2.4 为什么只补上下文，很多 Agent 还是做不稳"></a>2.4 为什么只补上下文，很多 Agent 还是做不稳</h3><p>上下文问题解决的是「模型看到什么」，但它不直接解决下面这些问题：</p>
-<ul>
-<li>它会不会误用高风险工具</li>
-<li>它改完代码以后如何验证</li>
-<li>它失败了以后如何重试或回滚</li>
-<li>它什么时候应该停下来汇报，而不是继续乱做</li>
-<li>它怎样在长任务里留下可以追溯的过程记录</li>
-</ul>
-<p>这些问题一出来，视角就必须继续外扩。我们研究的不再只是上下文，而是整个运行系统。这就是我理解的 Harness Engineering。</p>
-<h2 id="3-Harness-Engineering：把模型放进一个可运行、可纠错、可追溯的系统"><a href="#3-Harness-Engineering：把模型放进一个可运行、可纠错、可追溯的系统" class="headerlink" title="3. Harness Engineering：把模型放进一个可运行、可纠错、可追溯的系统"></a>3. Harness Engineering：把模型放进一个可运行、可纠错、可追溯的系统</h2><p>如何理解 harness，我想到一个合适的例子。一个新入职的经验丰富的工程师，我们需要怎样才能保证它的产出呢？</p>
-<ul>
-<li>给他配好的电脑</li>
-<li>告诉他规则和权利</li>
-<li>给它工作用的软件和运行环境</li>
-<li>告诉它本领域的知识</li>
-</ul>
-<p>同理，如果把一个能力不错的 Agent 看作新入职的工程师，那么 prompt 只是任务说明，context 只是你递给他的材料，而 <strong>harness 更像他所处的工作环境</strong>。</p>
-<p>真正决定他能不能稳定交付的，通常不是「会不会写代码」这一件事，而是下面这些工程条件是否存在：</p>
-<ul>
-<li>有没有明确的目标、边界和停止条件</li>
-<li>有没有合适的权限和运行环境</li>
-<li>有没有足够的领域知识和工具入口</li>
-<li>有没有日志、测试、页面反馈这类可观测信号</li>
-<li>有没有文档、记录和版本系统让它在长任务里不至于失忆</li>
-</ul>
-<p>所以，Harness Engineering 是在回答一个问题：<strong>如何把模型放进一个能持续做事的工程闭环环境里。</strong></p>
-<h3 id="3-1-确定任务目标"><a href="#3-1-确定任务目标" class="headerlink" title="3.1 确定任务目标"></a>3.1 确定任务目标</h3><p>很多 Agent 失控，不是因为它听不懂，而是因为系统没有给它清晰的「完成条件」和「禁止动作」。</p>
-<p>比如在代码任务里，至少要让它知道：</p>
-<ul>
-<li>什么叫完成</li>
-<li>哪些目录、分支、环境不能碰</li>
-<li>失败后是继续尝试、回退，还是停下来请求确认</li>
-<li>什么时候必须先汇报，再进入下一步</li>
-</ul>
-<p>这类约束看起来不像 AI 技术，实际上却直接决定产出质量。因为 Agent 一旦进入多步执行，没有约束的系统，天然更容易出现过度行动。这和对待人类程序员是一样的。</p>
-<h3 id="3-2-暴露隐性知识，而不是默认模型自己会懂"><a href="#3-2-暴露隐性知识，而不是默认模型自己会懂" class="headerlink" title="3.2 暴露隐性知识，而不是默认模型自己会懂"></a>3.2 暴露隐性知识，而不是默认模型自己会懂</h3><p>实践里，coding agent 最常见的跑偏原因，是它不知道团队那些「默认不言自明」的规则导致的。</p>
-<p>比如「做一个上新的功能」，在人类团队里可能隐含了很多前置约束：</p>
-<ul>
-<li>哪些指标必须埋点</li>
-<li>哪些埋点字段有历史兼容要求</li>
-<li>哪些 UI 改动要同步改文案和活动配置</li>
-<li>哪个目录下的脚本才是正式发布链路</li>
-</ul>
-<p>这些信息的密度非常高，如果没有清晰的呈现出来，agent 的幻觉就会将其放大。</p>
-<p>所以我更愿意把这件事理解成：<strong>不要只给 Agent 一个需求，而要补给它「一个新人第一周会被老员工口头交代的那些东西」。</strong></p>
-<h3 id="3-3-给足够但不过载的工具"><a href="#3-3-给足够但不过载的工具" class="headerlink" title="3.3 给足够但不过载的工具"></a>3.3 给足够但不过载的工具</h3><p>工具越多不是越好，太多工具会带来两个副作用：</p>
-<ul>
-<li>模型选择成本变高</li>
-<li>工具说明本身开始挤占上下文</li>
-</ul>
-<p>所以更合理的做法，往往不是「无限加工具」，而是让工具可发现、可按需加载。很多优秀的 coding agent 其实都不追求「为每个动作发明一个专用工具」，而是优先提供一小组通用能力，例如：</p>
-<ul>
-<li>Read</li>
-<li>Write</li>
-<li>Grep</li>
-<li>Glob</li>
-<li>Bash</li>
-</ul>
-<p>典型的如 Claude Code、pi-mono。这套设计的好处，是看似给了很少的工具，但实际覆盖面很大。前四个让它高效操作代码和文件，Bash 则提供兜底能力。剩下的空间，交给具体项目里的 CLI、脚本和工作流。</p>
-<p>隐含的逻辑是「我相信 Agent 足够的智能，可以找到自己合适的工具」。</p>
-<h3 id="3-4-提供可观测的反馈回路"><a href="#3-4-提供可观测的反馈回路" class="headerlink" title="3.4 提供可观测的反馈回路"></a>3.4 提供可观测的反馈回路</h3><p>没有反馈，Agent 就很难自我纠错。它做了一步动作，却不知道结果好坏，下一步只能继续猜。</p>
-<p>在软件开发里，最典型的反馈源包括：</p>
-<ul>
-<li>测试结果</li>
-<li>lint 和类型检查（很多 coding agent 工具会搭 LSP）</li>
-<li>结构化日志</li>
-<li>页面或接口的真实运行输出</li>
-<li>调试信息、浏览器行为、硬件或串口回传</li>
-</ul>
-<p>很多人觉得 Agent 输出质量差，第一反应是继续改 prompt 尝试。可如果系统根本没有把这些反馈暴露出来，再好的 prompt 也无法替代观测能力。一个不会看结果的 Agent，很难进入稳定迭代。</p>
-<p>从另一个层面说，这也是某些岗位的壁垒所在。越是依赖真实世界给予反馈的，越晚被替代。比如嵌入式开发，需要通过调试器等将信号接回到 agent 系统。反之则越快被替代，今年已经开始出现前端部门被整锅端掉了。</p>
-<h3 id="3-5-提供渐进式披露的记录系统"><a href="#3-5-提供渐进式披露的记录系统" class="headerlink" title="3.5 提供渐进式披露的记录系统"></a>3.5 提供渐进式披露的记录系统</h3><p>上下文窗口很宝贵，但长程任务天然需要大量记录。人类做项目时也不是把全部细节背在脑子里，而是把信息外化到文档、代码、日志和版本历史里，需要时再检索回来。</p>
-<p>Agent 也一样。好的记录系统，不是把百科全书塞进 AGENTS.md，而是给它一张地图，再把细节拆到真正可维护的位置：</p>
-<ul>
-<li><code>AGENTS.md</code> 负责告诉它规则、入口和知识分布</li>
-<li><code>docs/</code> 负责沉淀领域文档、流程说明、排障记录</li>
-<li><code>git</code> 负责保存每一步代码变化和提交语义</li>
-</ul>
-<p>这样做有两个直接好处：</p>
-<ul>
-<li>上下文不需要永久背着所有细节</li>
-<li>需要追溯时，可以沿着文档和版本历史反查</li>
-</ul>
-<p>从这个角度看，<strong>git 本身就是很适合 Agent 的外部记忆</strong>。它天然和代码关联，又鼓励小步迭代，检索成本也低。</p>
-<p>这块经验来自 OpenAI 在 2026 年 2 月 11 日发布的文章《工程技术：在智能体优先的世界中利用 Codex》，他们后来不再把 AGENTS.md 当百科全书，而是把它当作内容目录，真正的知识沉淀在结构化的 <code>docs/</code> 里。这个判断和我自己的实践是一致的：长任务需要的是可检索的记录系统，而不是一段越来越长的总提示词。</p>
-<p>我在做一个语音 agent vixio 工程时，对「记录系统」还有一个更强的感受：如果不强制 Agent 把关键决策写下来，长任务一定会越来越漂。</p>
-<p>我的做法是：</p>
-<ul>
-<li>每次开始实现前，先要求 Agent 完成设计并存到文档里</li>
-<li>后续实现一旦有更新，必须同步更新这份设计文档</li>
-<li>后面遇到关联任务时，要求 Agent 先回看并引用这份文档，再继续实现</li>
-</ul>
-<p>回想起来，这件事看起来像文档习惯，实际上是 harness 的一部分。因为它解决的不是「当前回答得好不好」，而是「多轮、多阶段任务里，Agent 能不能保留稳定的项目记忆」。</p>
-<p>长期任务里的记忆，不能只寄希望于上下文窗口自动维持，而要外置到文档、git、任务记录这些系统里。窗口里放的是当前阶段最相关的片段，真正的长期记忆应该在窗口外有可检索的落点。</p>
-<h2 id="4-回想我在做-Debug-Agent-时的经验"><a href="#4-回想我在做-Debug-Agent-时的经验" class="headerlink" title="4. 回想我在做 Debug Agent 时的经验"></a>4. 回想我在做 Debug Agent 时的经验</h2><h3 id="4-1-第一版：只有-prompt、问题描述、日志和仓库"><a href="#4-1-第一版：只有-prompt、问题描述、日志和仓库" class="headerlink" title="4.1 第一版：只有 prompt、问题描述、日志和仓库"></a>4.1 第一版：只有 prompt、问题描述、日志和仓库</h3><p>一般解决一个 BUG，都是如下的步骤，给出任务要求：</p>
-<blockquote>
-<p>解决这个崩溃问题。</p>
-</blockquote>
-<p>然后补上三类材料：</p>
-<ol>
-<li>问题描述</li>
-<li>崩溃日志</li>
-<li>代码仓库</li>
-</ol>
-<p>从「信息已经不少」的角度看，这似乎已经够了。但实际效果很差。Agent 会执行很久，读很多文件，尝试很多方向，却很难稳定定位到真正相关的代码段。它不是完全不能做事，而是一直在低效搜索。最主要的问题在于：<strong>不稳定</strong>。能不能找到问题点所在，完全看运气。最典型的就是，找崩溃问题，找到 memory 空指针，然后就围绕着这个空指针一直去自我证明。实际上，这里不会空指针，只是写法没有那么规范，导致它容易误判。</p>
-<p>这时候如果只从 Prompt Engineering 的角度思考，很容易得出一个错误结论：是不是 prompt 还不够细？</p>
-<h3 id="4-2-我当时的误判：先去做代码-RAG"><a href="#4-2-我当时的误判：先去做代码-RAG" class="headerlink" title="4.2 我当时的误判：先去做代码 RAG"></a>4.2 我当时的误判：先去做代码 RAG</h3><p>我第一反应其实不是做 harness，而是继续补 context。我试过把代码做索引，让 Agent 通过语义检索找与崩溃相关的代码。</p>
-<p>这一步没有带来预期收益，核心问题是<strong>召回率很低</strong>。</p>
-<p>调试类任务和知识问答不太一样。很多关键线索并不体现为自然语言语义相近，而体现为：</p>
-<ul>
-<li>崩溃堆栈里的特定符号</li>
-<li>日志中的关键字</li>
-<li>仓库里的历史术语</li>
-<li>某次改动引入的调用链变化</li>
-</ul>
-<p>也就是说，这个问题表面上像「信息不够」，本质上却是「信息组织方式不对」。代码语义检索在这里不是完全没用，但不是最有效的入口。</p>
-<h3 id="4-3-真正起作用的改动：给它一个崩溃分析技能"><a href="#4-3-真正起作用的改动：给它一个崩溃分析技能" class="headerlink" title="4.3 真正起作用的改动：给它一个崩溃分析技能"></a>4.3 真正起作用的改动：给它一个崩溃分析技能</h3><p>后面效果明显改善，是因为我不再继续堆 prompt，而是补了一套更接近工程经验的运行支架。</p>
-<p>我给 Agent 增加了一个「崩溃分析技能」，里面不是抽象原则，而是非常具体的工作方法：</p>
-<ul>
-<li>遇到这类崩溃，先搜哪些关键字</li>
-<li>应该优先调用电脑上的哪个分析工具</li>
-<li>可以参考一份过去解决过的类似问题分析</li>
-<li>遇到术语不理解时，要通过 git 记录理解术语含义，并反查对应代码段</li>
-</ul>
-<p>这次改动以后，执行效果就明显好了很多。因为 Agent 不再是在整个仓库里盲目游走，而是开始沿着一条更像资深工程师排障的路径推进。</p>
-<p>这件事对我最大的提醒是：<strong>很多时候，Agent 缺的不是「再解释一遍任务」，而是「给它一条可执行的调查路径」。</strong></p>
-<h3 id="4-4-这个案例里，三层分别发挥了什么作用"><a href="#4-4-这个案例里，三层分别发挥了什么作用" class="headerlink" title="4.4 这个案例里，三层分别发挥了什么作用"></a>4.4 这个案例里，三层分别发挥了什么作用</h3><p>如果用本文的三层框架回看这次调试过程，大概可以这样归因：</p>
-<ul>
-<li><strong>Prompt</strong> 负责定义目标，比如「解决这个崩溃问题」</li>
-<li><strong>Context</strong> 负责提供材料，比如日志、代码仓库、过去案例和关键字</li>
-<li><strong>Harness</strong> 负责把排查流程固定下来，让它知道先做什么、用什么工具、如何通过 git 和记忆系统持续逼近答案</li>
-</ul>
-<p>实际上，它能成功运行分析工具，也是我实现准备好了运行环境。也正因为这样，我现在对很多 Agent 失败场景的第一反应，已经不是「把 prompt 再写长一点」，而是先问一句：<strong>它到底缺的是目标表达、任务材料，还是工程支架？</strong></p>
-<h2 id="总结：Agent-时代，重心在「Harness」"><a href="#总结：Agent-时代，重心在「Harness」" class="headerlink" title="总结：Agent 时代，重心在「Harness」"></a>总结：Agent 时代，重心在「Harness」</h2><p>Prompt Engineering 解决的是如何把任务说明白，Context Engineering 解决的是如何把关键信息摆到模型眼前，Harness Engineering 解决的是如何让模型在真实环境里稳定做事。</p>
-<p>三者并不是谁取代谁，而是抽象层次一层层向外扩展。任务越接近真实生产，后两者的重要性就越高。</p>
-<p>模型能力越来越强，它所需要更多的可能是「给他一个自由发挥的舞台」，人类需要来协助它搭建舞台。而不是反过来，人类强烈的干预它的行为，却不给予它帮助。</p>
-<p>如果你用了顶级模型，但 vibe coding 效果不好，大概率不是模型不够聪明，而是还没有给模型提供足够好的运行环境，从而充分发挥它的能力。</p>
-<hr>
-<p>参考：</p>
-<ul>
-<li><a href="https://openai.com/zh-Hans-CN/index/harness-engineering/">Harness engineering: leveraging Codex in an agent-first world - OpenAI</a></li>
-</ul>
-<p>转载自知乎：<a href="https://zhuanlan.zhihu.com/p/2015142041282163260">https://zhuanlan.zhihu.com/p/2015142041282163260</a></p>
-]]></content>
-      <categories>
-        <category>VibeCoding方法论</category>
-      </categories>
-      <tags>
-        <tag>AI Coding</tag>
-        <tag>Harness Engineering</tag>
-        <tag>Context Engineering</tag>
-        <tag>Prompt Engineering</tag>
-        <tag>软件工程</tag>
-        <tag>开发方法论</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>H5详情页加载白屏优化：WKWebView渲染原理与实践</title>
-    <url>/2026/04/18/h5-webview-white-screen-optimization/</url>
-    <content><![CDATA[<h1 id="H5详情页加载白屏优化"><a href="#H5详情页加载白屏优化" class="headerlink" title="H5详情页加载白屏优化"></a>H5详情页加载白屏优化</h1><span id="more"></span>
-
-<h2 id="一、WebView-渲染流程"><a href="#一、WebView-渲染流程" class="headerlink" title="一、WebView 渲染流程"></a>一、WebView 渲染流程</h2><p><img src="/images/H5/1280X1280.PNG" alt="WKWebView 渲染流程"></p>
-<p>整个流程由 WebKit 框架驱动，运行在 iOS 系统的 WebContent 沙盒进程中。</p>
-<hr>
-<h3 id="①-初始化-WKWebView"><a href="#①-初始化-WKWebView" class="headerlink" title="① 初始化 WKWebView"></a>① 初始化 WKWebView</h3><p>iOS 8 之后，苹果用 WKWebView 取代了老旧的 UIWebView。初始化时有几个关键对象：</p>
-<p><code>WKWebViewConfiguration</code> 是整个配置的容器，里面最重要的是 <code>WKUserContentController</code>，你可以通过它注入 JS 脚本（WKUserScript），也可以注册消息处理器，让网页调用 Native 功能。</p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">let</span> config <span class="operator">=</span> <span class="type">WKWebViewConfiguration</span>()</span><br><span class="line"><span class="keyword">let</span> controller <span class="operator">=</span> <span class="type">WKUserContentController</span>()</span><br><span class="line">controller.add(<span class="keyword">self</span>, name: <span class="string">&quot;myBridge&quot;</span>)  <span class="comment">// 注册通信接口</span></span><br><span class="line">config.userContentController <span class="operator">=</span> controller</span><br><span class="line"></span><br><span class="line"><span class="keyword">let</span> webView <span class="operator">=</span> <span class="type">WKWebView</span>(frame: view.bounds, configuration: config)</span><br><span class="line">webView.navigationDelegate <span class="operator">=</span> <span class="keyword">self</span></span><br><span class="line">webView.uiDelegate <span class="operator">=</span> <span class="keyword">self</span></span><br></pre></td></tr></table></figure>
-
-<hr>
-<h3 id="②-发起请求-导航拦截"><a href="#②-发起请求-导航拦截" class="headerlink" title="② 发起请求 &amp; 导航拦截"></a>② 发起请求 &amp; 导航拦截</h3><p>调用 <code>load(URLRequest)</code> 后，WebKit 会先问你的 <code>navigationDelegate</code>：这次跳转允许吗？</p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">webView</span>(<span class="keyword">_</span> <span class="params">webView</span>: <span class="type">WKWebView</span>,</span><br><span class="line">             <span class="params">decidePolicyFor</span> <span class="params">action</span>: <span class="type">WKNavigationAction</span>,</span><br><span class="line">             <span class="params">decisionHandler</span>: <span class="keyword">@escaping</span> (<span class="type">WKNavigationActionPolicy</span>) -&gt; <span class="type">Void</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> action.request.url<span class="operator">?</span>.scheme <span class="operator">==</span> <span class="string">&quot;myapp&quot;</span> &#123;</span><br><span class="line">        <span class="comment">// 拦截自定义 scheme，做 JS Bridge</span></span><br><span class="line">        decisionHandler(.cancel)</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        decisionHandler(.allow)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>这个回调是拦截跳转的最佳时机，可以阻止跳转、做鉴权、拦截自定义 scheme。</p>
-<hr>
-<h3 id="③-网络层：DNS-→-TCP-→-HTTP"><a href="#③-网络层：DNS-→-TCP-→-HTTP" class="headerlink" title="③ 网络层：DNS → TCP → HTTP"></a>③ 网络层：DNS → TCP → HTTP</h3><p>这部分由系统的 URLSession &#x2F; CFNetwork 栈驱动（不是 App 的 URLSession，是 WebContent 进程内部的）：</p>
-<ul>
-<li><strong>DNS 解析</strong>：系统缓存优先，没缓存才真正查询。</li>
-<li><strong>TLS 握手</strong>：HTTPS 站点会走证书验证，如果服务器证书有问题，<code>didReceive challenge</code> 回调会触发，App 可以自定义处理。</li>
-<li><strong>HTTP 缓存</strong>：遵循标准的 Cache-Control、ETag 等缓存协议，WKWebView 有自己的磁盘缓存（WKWebsiteDataStore），不共享 App 的 URLCache，这点是常见踩坑点。</li>
-</ul>
-<hr>
-<h3 id="④-响应策略"><a href="#④-响应策略" class="headerlink" title="④ 响应策略"></a>④ 响应策略</h3><p>收到服务器响应头后，再问一次 delegate：这个响应允许展示吗？</p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">webView</span>(<span class="keyword">_</span> <span class="params">webView</span>: <span class="type">WKWebView</span>,</span><br><span class="line">             <span class="params">decidePolicyFor</span> <span class="params">response</span>: <span class="type">WKNavigationResponse</span>,</span><br><span class="line">             <span class="params">decisionHandler</span>: <span class="keyword">@escaping</span> (<span class="type">WKNavigationResponsePolicy</span>) -&gt; <span class="type">Void</span>) &#123;</span><br><span class="line">    <span class="comment">// 可检查 MIME 类型、状态码等</span></span><br><span class="line">    decisionHandler(.allow)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>如果 MIME 类型是 PDF 或其他无法渲染的内容，WebKit 会自动触发下载。</p>
-<hr>
-<h3 id="⑤-渲染引擎：WebKit-的五步流水线"><a href="#⑤-渲染引擎：WebKit-的五步流水线" class="headerlink" title="⑤ 渲染引擎：WebKit 的五步流水线"></a>⑤ 渲染引擎：WebKit 的五步流水线</h3><p>这是最核心的部分，数据到了之后 WebKit 做这些事：</p>
-<ol>
-<li><strong>HTML 解析 → DOM Tree</strong>：把 HTML 字节流解析成节点树，遇到 <code>&lt;script&gt;</code> 默认阻塞解析（除非有 async&#x2F;defer）。</li>
-<li><strong>CSS 解析 → CSSOM</strong>：解析所有样式表，生成样式规则树。</li>
-<li><strong>合并 Render Tree</strong>：把 DOM 和 CSSOM 合并，只包含可见节点。</li>
-<li><strong>Layout（排版）</strong>：计算每个节点在屏幕上的精确位置和大小。</li>
-<li><strong>Paint + Composite（绘制与合成）</strong>：生成图层，交给 GPU 合成输出到屏幕。</li>
-</ol>
-<p>JS 由 JavaScriptCore 引擎执行（和 Safari 共用）。图片解码是异步的，不阻塞主渲染流程。</p>
-<hr>
-<h3 id="⑥-JS-↔-Native-通信（Bridge）"><a href="#⑥-JS-↔-Native-通信（Bridge）" class="headerlink" title="⑥ JS ↔ Native 通信（Bridge）"></a>⑥ JS ↔ Native 通信（Bridge）</h3><p>这是混合开发最常用的能力：</p>
-<p><strong>网页调 Native：</strong> 网页发消息，Native 在回调里处理：</p>
-<figure class="highlight javascript"><table><tr><td class="code"><pre><span class="line"><span class="comment">// 网页侧</span></span><br><span class="line"><span class="variable language_">window</span>.<span class="property">webkit</span>.<span class="property">messageHandlers</span>.<span class="property">myBridge</span>.<span class="title function_">postMessage</span>(&#123; <span class="attr">action</span>: <span class="string">&quot;login&quot;</span> &#125;);</span><br></pre></td></tr></table></figure>
-
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Native 侧</span></span><br><span class="line"><span class="keyword">func</span> <span class="title function_">userContentController</span>(<span class="keyword">_</span> <span class="params">controller</span>: <span class="type">WKUserContentController</span>,</span><br><span class="line">                            <span class="params">didReceive</span> <span class="params">message</span>: <span class="type">WKScriptMessage</span>) &#123;</span><br><span class="line">    <span class="built_in">print</span>(message.body)  <span class="comment">// 收到 &#123; action: &quot;login&quot; &#125;</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p><strong>Native 调网页：</strong> 直接执行 JS 字符串：</p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line">webView.evaluateJavaScript(<span class="string">&quot;updateUserInfo(&#x27;<span class="subst">\(name)</span>&#x27;)&quot;</span>) &#123; result, error <span class="keyword">in</span></span><br><span class="line">    <span class="comment">// 拿到 JS 返回值</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<hr>
-<h3 id="⑦-进程模型：为什么-WebView-崩溃不会让-App-崩溃"><a href="#⑦-进程模型：为什么-WebView-崩溃不会让-App-崩溃" class="headerlink" title="⑦ 进程模型：为什么 WebView 崩溃不会让 App 崩溃"></a>⑦ 进程模型：为什么 WebView 崩溃不会让 App 崩溃</h3><p>这是 <code>WKWebView</code> 和老 <code>UIWebView</code> 最大的架构区别。<code>WKWebView</code> 的网页内容运行在一个<strong>独立的 WebContent 进程</strong>里，与 App 主进程通过 IPC（进程间通信）交互：</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">App 主进程（你的代码）</span><br><span class="line">     ↕  IPC</span><br><span class="line">WebContent 进程（网页运行在这里）</span><br></pre></td></tr></table></figure>
-
-<p>好处：网页 JS 内存溢出或崩溃，只会终止 WebContent 进程，App 主进程安然无恙。你会收到 <code>webViewWebContentProcessDidTerminate</code> 回调，可以在里面重新加载：</p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">webViewWebContentProcessDidTerminate</span>(<span class="keyword">_</span> <span class="params">webView</span>: <span class="type">WKWebView</span>) &#123;</span><br><span class="line">    webView.reload()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<hr>
-<h2 id="二、APP-可以优化的点"><a href="#二、APP-可以优化的点" class="headerlink" title="二、APP 可以优化的点"></a>二、APP 可以优化的点</h2><p><img src="/images/H5/7be01e5a-2b9a-44ea-8e93-d9b57dba703a.png" alt="优化概览"></p>
-<ul>
-<li>提前预热 WKWebView（第一次创建 WebView 本身需要约 200-300ms 初始化）</li>
-<li>离线包方案：把 H5 资源打包进 App，省去网络下载时间</li>
-<li>预加载：用户还没点进去，App 就偷偷在后台开始加载页面</li>
-<li>注入公共 Cookie &#x2F; Token，省去 H5 自己获取登录态的时间</li>
-</ul>
-<hr>
-<h3 id="1-预热-WKWebView"><a href="#1-预热-WKWebView" class="headerlink" title="1. 预热 WKWebView"></a>1. 预热 WKWebView</h3><p><strong>问题根源</strong>：第一次创建 WKWebView 时，系统需要启动 WebContent 进程、初始化 WebKit 引擎，耗时 200-300ms，用户会感觉到明显的白屏延迟。</p>
-<p><strong>解法</strong>：App 启动后提前创建一个 WKWebView 藏在内存里，用户真正打开页面时直接拿来用，跳过初始化耗时。</p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">WKWebViewPool</span> &#123;</span><br><span class="line">    <span class="keyword">static</span> <span class="keyword">let</span> shared <span class="operator">=</span> <span class="type">WKWebViewPool</span>()</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">var</span> warmWebView: <span class="type">WKWebView</span>?</span><br><span class="line"></span><br><span class="line">    <span class="comment">// App 启动时调用，提前预热</span></span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">warmUp</span>() &#123;</span><br><span class="line">        <span class="keyword">let</span> config <span class="operator">=</span> <span class="type">WKWebViewConfiguration</span>()</span><br><span class="line">        warmWebView <span class="operator">=</span> <span class="type">WKWebView</span>(frame: .zero, configuration: config)</span><br><span class="line">        <span class="comment">// 加载一个空页面，触发 WebContent 进程启动</span></span><br><span class="line">        warmWebView<span class="operator">?</span>.load(<span class="type">URLRequest</span>(url: <span class="type">URL</span>(string: <span class="string">&quot;about:blank&quot;</span>)<span class="operator">!</span>))</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 用户要打开页面时，取出预热好的实例</span></span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">dequeue</span>() -&gt; <span class="type">WKWebView</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">let</span> webView <span class="operator">=</span> warmWebView &#123;</span><br><span class="line">            warmWebView <span class="operator">=</span> <span class="literal">nil</span></span><br><span class="line">            warmUp() <span class="comment">// 取走之后立刻再预热一个备用</span></span><br><span class="line">            <span class="keyword">return</span> webView</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="type">WKWebView</span>(frame: .zero)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// AppDelegate 里</span></span><br><span class="line"><span class="keyword">func</span> <span class="title function_">applicationDidFinishLaunching</span>(<span class="keyword">_</span> <span class="params">application</span>: <span class="type">UIApplication</span>) &#123;</span><br><span class="line">    <span class="type">WKWebViewPool</span>.shared.warmUp()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<blockquote>
-<p><strong>注意</strong>：预热的 WKWebView 要放在内存里，不能加到任何视图层级上，否则会影响布局。</p>
-</blockquote>
-<hr>
-<h3 id="2-离线包方案"><a href="#2-离线包方案" class="headerlink" title="2. 离线包方案"></a>2. 离线包方案</h3><p><strong>问题根源</strong>：H5 资源（JS、CSS、图片）每次都要从网络下载，弱网环境下可能要等 1-3 秒。</p>
-<p><strong>核心思路</strong>：把 H5 的静态资源提前打包下载到本地，WebView 加载时拦截网络请求，用本地文件替代网络响应。</p>
-<p>整个流程分三个阶段：</p>
-<p><strong>① 打包阶段（H5 构建时）：</strong></p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">H5 项目构建</span><br><span class="line">    ↓</span><br><span class="line">生成资源包 package.zip</span><br><span class="line">    ↓</span><br><span class="line">上传到 CDN，同时更新版本号配置文件</span><br></pre></td></tr></table></figure>
-
-<p><strong>② 下载阶段（App 运行时）：</strong></p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">OfflinePackageManager</span> &#123;</span><br><span class="line">    <span class="comment">// App 启动或切到前台时检查更新</span></span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">checkUpdate</span>() &#123;</span><br><span class="line">        fetchVersionConfig &#123; remoteVersion <span class="keyword">in</span></span><br><span class="line">            <span class="keyword">let</span> localVersion <span class="operator">=</span> <span class="type">UserDefaults</span>.standard.string(forKey: <span class="string">&quot;offlineVersion&quot;</span>)</span><br><span class="line">            <span class="keyword">if</span> remoteVersion <span class="operator">!=</span> localVersion &#123;</span><br><span class="line">                <span class="keyword">self</span>.downloadPackage(version: remoteVersion)</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">downloadPackage</span>(<span class="params">version</span>: <span class="type">String</span>) &#123;</span><br><span class="line">        <span class="comment">// 下载 zip 到沙盒</span></span><br><span class="line">        <span class="comment">// 解压到 /Library/offline/package/</span></span><br><span class="line">        <span class="comment">// 更新本地版本号记录</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p><strong>③ 拦截阶段（WebView 加载时）：</strong></p>
-<p>用 <code>WKURLSchemeHandler</code> 拦截请求，用本地文件响应：</p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">OfflineSchemeHandler</span>: <span class="title class_ inherited__">NSObject</span>, <span class="title class_ inherited__">WKURLSchemeHandler</span> &#123;</span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">webView</span>(<span class="keyword">_</span> <span class="params">webView</span>: <span class="type">WKWebView</span>,</span><br><span class="line">                 <span class="params">start</span> <span class="params">urlSchemeTask</span>: <span class="type">WKURLSchemeTask</span>) &#123;</span><br><span class="line">        <span class="keyword">let</span> url <span class="operator">=</span> urlSchemeTask.request.url<span class="operator">!</span></span><br><span class="line">        <span class="keyword">let</span> localPath <span class="operator">=</span> mapToLocalFile(url)  <span class="comment">// URL 映射到本地文件路径</span></span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> <span class="type">FileManager</span>.default.fileExists(atPath: localPath),</span><br><span class="line">           <span class="keyword">let</span> data <span class="operator">=</span> <span class="type">FileManager</span>.default.contents(atPath: localPath) &#123;</span><br><span class="line">            <span class="comment">// 本地有缓存，直接用本地文件响应</span></span><br><span class="line">            <span class="keyword">let</span> response <span class="operator">=</span> <span class="type">URLResponse</span>(url: url,</span><br><span class="line">                                       mimeType: mimeType(for: localPath),</span><br><span class="line">                                       expectedContentLength: data.count,</span><br><span class="line">                                       textEncodingName: <span class="string">&quot;utf-8&quot;</span>)</span><br><span class="line">            urlSchemeTask.didReceive(response)</span><br><span class="line">            urlSchemeTask.didReceive(data)</span><br><span class="line">            urlSchemeTask.didFinish()</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="comment">// 本地没有，降级走网络</span></span><br><span class="line">            fallbackToNetwork(urlSchemeTask)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 注册拦截器</span></span><br><span class="line"><span class="keyword">let</span> config <span class="operator">=</span> <span class="type">WKWebViewConfiguration</span>()</span><br><span class="line">config.setURLSchemeHandler(<span class="type">OfflineSchemeHandler</span>(), forURLScheme: <span class="string">&quot;https&quot;</span>)</span><br></pre></td></tr></table></figure>
-
-<blockquote>
-<p><strong>效果</strong>：JS&#x2F;CSS 从本地读取，耗时从几百毫秒降到几毫秒，首屏速度提升明显。</p>
-</blockquote>
-<hr>
-<h3 id="3-预加载"><a href="#3-预加载" class="headerlink" title="3. 预加载"></a>3. 预加载</h3><p><strong>问题根源</strong>：用户点进页面的那一刻才开始加载，等待时间全摆在用户面前。</p>
-<p><strong>解法</strong>：在用户”即将”打开页面之前，偷偷提前开始加载。</p>
-<p>触发时机的选择：</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">太早预加载  →  浪费流量和内存（用户可能根本不点）</span><br><span class="line">太晚预加载  →  来不及，效果差</span><br><span class="line"></span><br><span class="line">最佳时机：</span><br><span class="line">  列表页 → 用户手指触摸某个 cell 时（touchesBegan）</span><br><span class="line">  首页   → App 启动完成后，主要内容渲染完之后</span><br><span class="line">  活动页 → 运营后台配置&quot;即将推送&quot;时提前下载</span><br></pre></td></tr></table></figure>
-
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">PreloadWebView</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">var</span> hiddenWebView: <span class="type">WKWebView</span>?</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 用户手指按下 cell 时触发（比点击早约 100ms）</span></span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">preload</span>(<span class="params">url</span>: <span class="type">URL</span>) &#123;</span><br><span class="line">        <span class="keyword">guard</span> hiddenWebView <span class="operator">==</span> <span class="literal">nil</span> <span class="keyword">else</span> &#123; <span class="keyword">return</span> &#125;</span><br><span class="line">        hiddenWebView <span class="operator">=</span> <span class="type">WKWebView</span>(frame: .zero)</span><br><span class="line">        hiddenWebView<span class="operator">?</span>.load(<span class="type">URLRequest</span>(url: url))</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 用户真正点击时，把预加载好的 WebView 展示出来</span></span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">dequeuePreloaded</span>() -&gt; <span class="type">WKWebView</span>? &#123;</span><br><span class="line">        <span class="keyword">let</span> webView <span class="operator">=</span> hiddenWebView</span><br><span class="line">        hiddenWebView <span class="operator">=</span> <span class="literal">nil</span></span><br><span class="line">        <span class="keyword">return</span> webView</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<blockquote>
-<p><strong>注意</strong>：预加载要控制数量，同时预加载太多会占用大量内存，一般只预加载 1-2 个页面。</p>
-</blockquote>
-<hr>
-<h3 id="4-注入-Cookie-Token"><a href="#4-注入-Cookie-Token" class="headerlink" title="4. 注入 Cookie &#x2F; Token"></a>4. 注入 Cookie &#x2F; Token</h3><p><strong>问题根源</strong>：H5 加载完成后还要自己发请求获取登录态，又多一次网络往返，慢且有闪屏风险（先展示未登录状态，再切换到登录状态）。</p>
-<p><strong>解法</strong>：WebView 加载之前，Native 把 Token 直接塞进去，H5 一渲染就已经是登录状态了。</p>
-<p><strong>方式一：注入 Cookie</strong></p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">injectCookie</span>(<span class="params">to</span> <span class="params">webView</span>: <span class="type">WKWebView</span>, <span class="params">completion</span>: <span class="keyword">@escaping</span> () -&gt; <span class="type">Void</span>) &#123;</span><br><span class="line">    <span class="keyword">let</span> token <span class="operator">=</span> <span class="type">KeychainManager</span>.getToken()</span><br><span class="line">    <span class="keyword">let</span> cookieStore <span class="operator">=</span> webView.configuration.websiteDataStore.httpCookieStore</span><br><span class="line"></span><br><span class="line">    <span class="keyword">let</span> cookie <span class="operator">=</span> <span class="type">HTTPCookie</span>(properties: [</span><br><span class="line">        .name:    <span class="string">&quot;token&quot;</span>,</span><br><span class="line">        .value:   token,</span><br><span class="line">        .domain:  <span class="string">&quot;.mycompany.com&quot;</span>,   <span class="comment">// 注意加点，支持子域名</span></span><br><span class="line">        .path:    <span class="string">&quot;/&quot;</span>,</span><br><span class="line">        .secure:  <span class="string">&quot;TRUE&quot;</span>,</span><br><span class="line">        .expires: <span class="type">Date</span>().addingTimeInterval(<span class="number">7</span> <span class="operator">*</span> <span class="number">24</span> <span class="operator">*</span> <span class="number">3600</span>)</span><br><span class="line">    ])<span class="operator">!</span></span><br><span class="line"></span><br><span class="line">    cookieStore.setCookie(cookie) &#123;</span><br><span class="line">        completion()  <span class="comment">// Cookie 注入完成后再 load URL</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 使用</span></span><br><span class="line">injectCookie(to: webView) &#123;</span><br><span class="line">    webView.load(<span class="type">URLRequest</span>(url: targetURL))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p><strong>方式二：注入 JS 全局变量</strong></p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">let</span> token <span class="operator">=</span> <span class="type">KeychainManager</span>.getToken()</span><br><span class="line"><span class="keyword">let</span> userInfo <span class="operator">=</span> [<span class="string">&quot;token&quot;</span>: token, <span class="string">&quot;userId&quot;</span>: <span class="string">&quot;123456&quot;</span>, <span class="string">&quot;vipLevel&quot;</span>: <span class="number">3</span>] <span class="keyword">as</span> [<span class="type">String</span>: <span class="keyword">Any</span>]</span><br><span class="line"><span class="keyword">let</span> json <span class="operator">=</span> <span class="keyword">try!</span> <span class="type">JSONSerialization</span>.data(withJSONObject: userInfo)</span><br><span class="line"><span class="keyword">let</span> jsonString <span class="operator">=</span> <span class="type">String</span>(data: json, encoding: .utf8)<span class="operator">!</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 在页面 JS 执行前注入，H5 可以直接读取</span></span><br><span class="line"><span class="keyword">let</span> script <span class="operator">=</span> <span class="type">WKUserScript</span>(</span><br><span class="line">    source: <span class="string">&quot;window.__nativeUserInfo = <span class="subst">\(jsonString)</span>&quot;</span>,</span><br><span class="line">    injectionTime: .atDocumentStart,  <span class="comment">// DOM 构建前就注入</span></span><br><span class="line">    forMainFrameOnly: <span class="literal">true</span></span><br><span class="line">)</span><br><span class="line">config.userContentController.addUserScript(script)</span><br></pre></td></tr></table></figure>
-
-<p>H5 侧直接读取，不用发额外请求：</p>
-<figure class="highlight javascript"><table><tr><td class="code"><pre><span class="line"><span class="comment">// 页面初始化时</span></span><br><span class="line"><span class="keyword">const</span> userInfo = <span class="variable language_">window</span>.<span class="property">__nativeUserInfo</span></span><br><span class="line"><span class="keyword">if</span> (userInfo?.<span class="property">token</span>) &#123;</span><br><span class="line">    <span class="comment">// 直接用，不用再请求登录态接口</span></span><br><span class="line">    <span class="title function_">initPageWithToken</span>(userInfo.<span class="property">token</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<hr>
-<h3 id="5-DNS-预解析"><a href="#5-DNS-预解析" class="headerlink" title="5. DNS 预解析"></a>5. DNS 预解析</h3><p><strong>问题</strong>：WebView 加载时，第一步 DNS 解析就要花 50-200ms，弱网下更慢。</p>
-<p><strong>解法</strong>：在 App 启动时提前解析目标域名，WebView 真正发请求时直接用缓存的 IP：</p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="comment">// App 启动时预解析常用域名</span></span><br><span class="line"><span class="keyword">let</span> hosts <span class="operator">=</span> [<span class="string">&quot;mycompany.com&quot;</span>, <span class="string">&quot;api.mycompany.com&quot;</span>, <span class="string">&quot;static.mycompany.com&quot;</span>]</span><br><span class="line"><span class="keyword">for</span> host <span class="keyword">in</span> hosts &#123;</span><br><span class="line">    <span class="keyword">let</span> <span class="keyword">_</span> <span class="operator">=</span> <span class="type">CFHostCreateWithName</span>(<span class="literal">nil</span>, host <span class="keyword">as</span> <span class="type">CFString</span>)</span><br><span class="line">        .takeRetainedValue()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<hr>
-<h3 id="整体效果对比"><a href="#整体效果对比" class="headerlink" title="整体效果对比"></a>整体效果对比</h3><figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">不做任何优化：</span><br><span class="line">用户点击 → WebView 初始化(300ms) → DNS(100ms)</span><br><span class="line">        → TCP/TLS(200ms) → 下载资源(500ms) → 渲染 = 约 1.1s</span><br><span class="line"></span><br><span class="line">全部优化后：</span><br><span class="line">用户点击 → 拿预热 WebView(0ms) → 读本地离线包(5ms)</span><br><span class="line">        → 渲染(已预加载，接近 0ms) = 约 100ms 内</span><br></pre></td></tr></table></figure>
-
-<p>每一个优化点单独用都有效果，组合起来用效果最显著，头部大厂的 H5 页面秒开基本都是这几板斧叠加的结果。</p>
-<hr>
-<h2 id="三、具体优化过程"><a href="#三、具体优化过程" class="headerlink" title="三、具体优化过程"></a>三、具体优化过程</h2><h3 id="（一）现有卡点和改进思路"><a href="#（一）现有卡点和改进思路" class="headerlink" title="（一）现有卡点和改进思路"></a>（一）现有卡点和改进思路</h3><p>现在的记事本业务中（代办提醒业务也有加载 H5 的业务，但是涉及到 RN bundle 的加载，暂不考虑），点击笔记 item 都会加载对应的 H5 详情页面，从点击到完全渲染出页面体感耗时 1s+，会看到明显的 loading 动画和短暂的白屏过渡。</p>
-<p><strong>优化前效果：</strong></p>
-<video controls width="360" style="max-width:100%">
-  <source src="/images/H5/ScreenRecording_03-26-2026 10-13-59_1 (1).mp4" type="video/mp4">
-</video>
-
-<p>现有的业务代码逻辑是：</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">点击 item → 创建新 WebView → load H5 → 等页面起来 → 再展示内容</span><br></pre></td></tr></table></figure>
-
-<p><code>MemoryListView</code> 打开的 <code>selectedNoteUrl</code> 实际上是固定的 <code>livisNotepadURL</code>，noteId 是通过 <code>customData</code> 传进去的，不是每条笔记一个不同 URL。那么，完全可以提前把记事本 H5 “壳子页”预加载好，点击后直接复用这一个 WKWebView，再把当前 noteId 注入进去。这比每条 item 单独预加载一个 H5 简单很多、风险也低很多。</p>
-<p>所以修改后的方案是：</p>
-<blockquote>
-<p>页面进入时就预取 token + 预热 WebKit + 预加载记事本 H5 壳子 → 点击 item 时直接复用已加载好的 WebView → 注入 noteId → 展示</p>
-</blockquote>
-<p>也就是说暂时可以先做上面优化里面的 <strong>1（预热）、3（预加载）、4（注入 Cookie）</strong> 三项优化。</p>
-<hr>
-<h3 id="（二）具体改动"><a href="#（二）具体改动" class="headerlink" title="（二）具体改动"></a>（二）具体改动</h3><p>要想把预加载出来的 WKWebView 真正复用到正式展示链路里，就需要修改 UILib 库。</p>
-<p>因为当前 <code>LivisWebViewController</code> 最终会走 Pod 里的 <code>WebViewController</code>，创建自己的 <code>wkWebView</code> 并自动 <code>loadRequest</code>。如果不改 Pod，就很难把 <code>WebViewPreloader.shared.preloadedWebView</code> 真正塞进去复用。</p>
-<h4 id="一期"><a href="#一期" class="headerlink" title="一期"></a>一期</h4><p>暂时先不做较大改动，先采用以下方案：</p>
-<p>不再追求复用同一个预加载 WKWebView 实例（那需要改 Pod 基类），而是改成三件事：</p>
-<ul>
-<li><strong>提前拿登录态</strong>：进入列表页就预取 JWT；</li>
-<li><strong>提前种业务 Cookie</strong>：避免点击后再补登录态；</li>
-<li><strong>提前预热 WebKit &#x2F; H5 壳子页</strong>：让正式打开时尽量复用已拉起的 WebContent 进程、共享 processPool、共享 UserAgent、共享默认数据存储带来的缓存收益。</li>
-</ul>
-<p>具体修改：</p>
-<ul>
-<li>新增记事本 H5 的统一预热配置与辅助方法到 <code>WebViewUtils.swift</code>，包括 notebook URL、提前种 cookie、构造与正式链路更接近的预热 <code>WKWebViewConfiguration</code>、为预热 WebView 设置共享 processPool 和 UserAgent。</li>
-<li>扩展 <code>WebViewPreloader.swift</code>，支持在预热时传入自定义 <code>webViewConfigurator</code>，这样就能在不碰 Pod 基类的前提下，让预热出来的 WebView 更贴近正式打开链路。最后把 <code>MemoryListView.swift</code> 的 <code>prepareNotebookH5IfNeeded()</code> 改成统一走这些工具方法，减少点击前后的配置分叉。</li>
-</ul>
-<p>预期的效果：</p>
-<ul>
-<li>列表页进入后更早完成 JWT &#x2F; cookie &#x2F; WebKit 进程 &#x2F; UserAgent &#x2F; 共享 processPool 预热；</li>
-<li>点击笔记 item 时，正式 WebView 能复用更多进程与缓存收益，减轻冷启动白屏；</li>
-<li>所有改动都在 Swift 层，不改 Pod。</li>
-</ul>
-<p><strong>优化后效果：</strong></p>
-<video controls width="360" style="max-width:100%">
-  <source src="/images/H5/ScreenRecording_03-27-2026 15-51-40_1 (1).mp4" type="video/mp4">
-</video>
-
-<p>速度快的话会看不到 loading 动画，但是还是会有白屏间隙时间。</p>
-<h4 id="二期"><a href="#二期" class="headerlink" title="二期"></a>二期</h4><p>未完待续…</p>
-<hr>
-<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
-<li><a href="https://mp.weixin.qq.com/s/Xqr6rQBbx7XPoBESEFuXJw">今日头条品质优化 - 图文详情页秒开实践</a></li>
-<li><a href="https://zhuanlan.zhihu.com/p/393177043">Android &#x2F; iOS Webview 容器下 JSBridge SDK 原理浅析 —— 前端视角</a></li>
-<li><a href="https://mp.weixin.qq.com/s/PtzMWWcTKwPZWXFFkLQ7yA">H5开屏从龟速到闪电，企微是如何做到的</a></li>
-<li><a href="https://mp.weixin.qq.com/s/AV2SwFfwwJH7xyrIBJemgw">网易新闻客户端 H5 秒开优化</a></li>
-<li><a href="https://mp.weixin.qq.com/s/_DdaUaUVojHPhOS8XEZl5g">淘宝页面首帧优化的经验和心得</a></li>
-<li><a href="https://mp.weixin.qq.com/s/FmGP0oMy1ratWHAMeOGrkA">将淘宝直播间融入H5页面的技术探索</a></li>
-<li><a href="https://mp.weixin.qq.com/s/VFXSapEnCaYcRp-ODE1gdA">淘宝客户端动态化页面搭建</a></li>
-<li><a href="https://mp.weixin.qq.com/s/O6daxmeTuLE1b7d9nTQiCw">淘宝承接页是如何实现秒开的</a></li>
-</ul>
-]]></content>
-      <categories>
-        <category>iOS</category>
-      </categories>
-      <tags>
-        <tag>iOS</tag>
-        <tag>H5</tag>
-        <tag>性能优化</tag>
-        <tag>WKWebView</tag>
-        <tag>白屏优化</tag>
-        <tag>离线包</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>从Runtime到Runloop</title>
-    <url>/2026/03/30/from_runtime_tor_runloop/</url>
-    <content><![CDATA[<h1 id="从Runtime到Runloop"><a href="#从Runtime到Runloop" class="headerlink" title="从Runtime到Runloop"></a>从Runtime到Runloop</h1><p>iOS 程序的执行顺序分两个层面：启动过程和运行时的生命周期。</p>
-<span id="more"></span>
-
-<p><img src="/images/from_runtime_to_runloop.jpeg" alt="iOS程序执行流程"></p>
-<p>① 内核 &amp; dyld 阶段<br>用户点击 App 图标后，系统做的第一件事不是执行你写的代码，而是：<br>内核把 Mach-O 格式的可执行文件映射进内存，然后交给 dyld（动态链接器）。dyld 负责把 UIKit、Foundation、你引入的第三方库等所有动态库加载进来，解析符号，把函数地址都对号入座。<br>之后 Objective-C Runtime 初始化，执行所有类的 +load 方法。这是整个 App 里最早被执行的自定义代码，很多黑魔法（Method Swizzling）就藏在这里。</p>
-<p>② main() 函数<br>这是能看到的起点，但其实也就两行核心代码：</p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Swift 项目里用 @main 替代，本质一样</span></span><br><span class="line"><span class="type">UIApplicationMain</span>(argc, argv, <span class="literal">nil</span>, <span class="type">NSStringFromClass</span>(<span class="type">AppDelegate</span>.<span class="keyword">self</span>))</span><br></pre></td></tr></table></figure>
-
-<p>UIApplicationMain 做了三件事：创建 UIApplication 单例、创建 AppDelegate 实例、启动主线程的 RunLoop（这个函数永远不会返回）。</p>
-<p>③ AppDelegate 回调</p>
-<figure class="highlight swift"><table><tr><td class="code"><pre><span class="line"><span class="keyword">func</span> <span class="title function_">application</span>(<span class="keyword">_</span> <span class="params">application</span>: <span class="type">UIApplication</span>,</span><br><span class="line">                 <span class="params">didFinishLaunchingWithOptions</span> <span class="params">launchOptions</span>: [<span class="type">UIApplication</span>.<span class="params">LaunchOptionsKey</span>: <span class="keyword">Any</span>]<span class="operator">?</span>) -&gt; <span class="type">Bool</span> &#123;</span><br><span class="line">    <span class="comment">// 在这里做：SDK 初始化、推送注册、根视图设置</span></span><br><span class="line">    <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>这是真正干活的第一个入口。返回 false 会让系统认为启动失败。<br>iOS 13 之后引入了 SceneDelegate，多窗口相关的逻辑（比如 iPad 分屏）从 AppDelegate 拆了出来，窗口和根 ViewController 的设置移到 scene(_:willConnectTo:) 里做。</p>
-<p>④ ViewController 生命周期<br>这是日常开发接触最多的部分，几个关键方法的调用时机：</p>
-<table>
-<thead>
-<tr>
-<th>方法</th>
-<th>调用时机</th>
-<th>适合做什么</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>loadView</td>
-<td>视图还不存在时</td>
-<td>自定义根 view（少用）</td>
-</tr>
-<tr>
-<td>viewDidLoad</td>
-<td>视图加载完，只调一次</td>
-<td>UI 初始化、绑定数据</td>
-</tr>
-<tr>
-<td>viewWillAppear</td>
-<td>每次显示前</td>
-<td>刷新数据、注册通知</td>
-</tr>
-<tr>
-<td>viewDidAppear</td>
-<td>每次显示后</td>
-<td>开始动画、开始录音</td>
-</tr>
-<tr>
-<td>viewWillDisappear</td>
-<td>每次消失前</td>
-<td>保存状态、取消网络请求</td>
-</tr>
-<tr>
-<td>viewDidDisappear</td>
-<td>每次消失后</td>
-<td>移除通知、暂停播放</td>
-</tr>
-</tbody></table>
-<p>⑤ RunLoop：App 真正的心跳<br>UIApplicationMain 启动之后，主线程就进入了一个 永不退出的事件循环，这就是 RunLoop。它的工作原理是：</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">有事件来了？→ 处理（触摸、定时器、网络回调……）</span><br><span class="line">没事件？→ 休眠，让出 CPU</span><br></pre></td></tr></table></figure>
-
-<p>所有的用户交互、网络回调、动画帧渲染，本质上都是”往 RunLoop 里投递事件”，然后等 RunLoop 调度到你。<br>这也是为什么在主线程做耗时操作会卡 UI——RunLoop 被占着，其他事件（包括屏幕刷新）都排不上队。<br>参考资料<br><a href="https://mp.weixin.qq.com/s/hTyudBBgFyq8Y3apr9xBTQ">iOS之Runloop</a></p>
-]]></content>
-      <categories>
-        <category>iOS</category>
-      </categories>
-      <tags>
-        <tag>Runtime</tag>
-        <tag>Runloop</tag>
-        <tag>iOS开发</tag>
       </tags>
   </entry>
   <entry>
