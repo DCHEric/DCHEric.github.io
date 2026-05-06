@@ -3386,4 +3386,81 @@
         <tag>任务调度</tag>
       </tags>
   </entry>
+  <entry>
+    <title>Lark-CLI：让 AI 真正用上飞书</title>
+    <url>/2026/05/06/lark-cli-ai-feishu-bridge/</url>
+    <content><![CDATA[<p>你是否曾经想过，直接把产品经理的飞书需求文档发给 Claude Code（OpenClaw、Codex、Cursor、Kiro CLI、Qoder、Trae、Windsurf），让 AI 直接理解产品需求，再根据 Codebase 设计技术方案。你校准满意后再让 AI 开始干活，坐等验收。</p>
+<p>理想很美好，现实很骨感。第一个问题是 AI 没有飞书的访问权限，对此公司内有团队开发出了知言 MCP（doc-parser），可以让 AI 把飞书文档提取成 Markdown，方便喂给 AI。</p>
+<span id="more"></span>
+
+<hr>
+<h2 id="一、Lark-CLI"><a href="#一、Lark-CLI" class="headerlink" title="一、Lark-CLI"></a>一、Lark-CLI</h2><p>飞书在 GitHub 上开源了一个命令行工具 <a href="https://github.com/larksuite/cli">larksuite&#x2F;cli</a>，叫 <code>lark-cli</code>。</p>
+<p>飞书 CLI 覆盖了飞书 11 个核心业务域，包括即时通讯、云文档、多维表格、电子表格、日历、邮箱、任务、视频会议、知识库、通讯录、云空间，总共提供了 200 多条命令。</p>
+<p>几乎把飞书核心能力都包进来了。</p>
+<p>同时它还为 AI Agent 设计了 19 个预置 Skills，相当于 19 套指令文件，AI 加载之后就知道怎么调用飞书的各项功能，不需要你来帮它选工具。</p>
+<h3 id="天然适合-AI-操控"><a href="#天然适合-AI-操控" class="headerlink" title="天然适合 AI 操控"></a>天然适合 AI 操控</h3><p>CLI 的本质是命令，一行命令做一件事，结构清晰。这和 AI 的交互方式高度吻合——AI 最擅长的就是把你的自然语言翻译成一条条命令，然后顺序执行。</p>
+<p>基于 OpenAPI 的 MCP 之所以上下文爆炸，是因为它把所有 API 都平铺出来，AI 要从几十上百个选项里挑合适的。而 CLI 是把这些 API 组合成了有意义的命令单元，一条命令背后可能封装了三四个 API 调用，AI 不需要知道细节，只需要知道用哪条命令。</p>
+<h3 id="不需要自己开发"><a href="#不需要自己开发" class="headerlink" title="不需要自己开发"></a>不需要自己开发</h3><p>以前要自己写脚本封装成 CLI 命令，现在现成的命令直接用。</p>
+<hr>
+<h2 id="二、安装步骤"><a href="#二、安装步骤" class="headerlink" title="二、安装步骤"></a>二、安装步骤</h2><p>把下面这句话发给你的 AI Agent（Claude Code、Codex …）。AI 会自动安装 <code>@larksuite/cli</code> 以及 19 个 Skills。</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">帮我安装所有东西：https://github.com/larksuite/cli/blob/main/README.zh.md</span><br></pre></td></tr></table></figure>
+
+<p><img src="/images/lark-cli/10382aff-b5a7-4a5c-9a0d-bf5ff6901674.jpg" alt="安装过程截图"></p>
+<p>中间会进行飞书应用凭证配置和登录授权。点击 URL，跳到网页点击授权后，飞书会自动上报审批权限。</p>
+<p>通过后就完成了全部配置，你就收获了一个机器人。</p>
+<p><img src="/images/lark-cli/69656bcd-53a5-4380-af12-a93982697adc.jpg" alt="授权完成"></p>
+<p><img src="/images/lark-cli/e133bf33-2d05-4f9f-8df1-7b835e218cbf.jpg" alt="Skills 加载成功"></p>
+<p>装完之后，<strong>要重启 Claude Code</strong>（或者 Cursor、Codex 等），才能加载 Skills。</p>
+<p>具体指令步骤：</p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="comment"># 通过 npm 下载 cli</span></span><br><span class="line">npm install -g @larksuite/cli</span><br><span class="line"><span class="comment"># 安装 skills</span></span><br><span class="line">npx skills add larksuite/cli -y -g</span><br><span class="line"><span class="comment"># 配置应用凭证</span></span><br><span class="line">lark-cli config init --new</span><br><span class="line"><span class="comment"># 飞书登录授权</span></span><br><span class="line">lark-cli auth login --recommend</span><br></pre></td></tr></table></figure>
+
+<p>安装后的 lark-cli 在 <code>~/.nvm/versions/node/v20.20.2/bin/lark-cli</code> 中，是一个 Node.js 脚本，用来<strong>启动真正的 CLI 程序</strong>。</p>
+<p>安装后所有的 Skills 在 <code>~/.agents</code> 文件夹下。在线 Skills 仓库：<a href="https://skills.sh/larksuite/cli">skills.sh&#x2F;larksuite&#x2F;cli</a></p>
+<p><img src="/images/lark-cli/a33bed91-c899-460d-8c1f-ae341c536831.jpg" alt="Skills 目录结构"></p>
+<p>感兴趣可以详细看看 skill.md 的详细设计：</p>
+<p><img src="/images/lark-cli/11208191-cb9d-4357-bdfb-f341fee2208a.jpg" alt="SKILL.md 设计"></p>
+<p>所有的配置信息在 <code>~/.lark-cli</code> 中：</p>
+<p><img src="/images/lark-cli/33061667-dbf3-4707-9cbd-d97342cb8817.jpg" alt="配置目录"></p>
+<ul>
+<li><code>~/.config/lark-cli/config.json</code> — 应用凭证（App ID、App Secret）</li>
+<li><code>~/.config/lark-cli/cache/</code> — Token 缓存（包含你的 OAuth 授权 token）</li>
+<li><code>~/.config/lark-cli/logs/</code> — 日志</li>
+<li><code>~/.config/lark-cli/locks/</code> — 锁文件</li>
+</ul>
+<hr>
+<h2 id="三、原理解析"><a href="#三、原理解析" class="headerlink" title="三、原理解析"></a>三、原理解析</h2><p>下面这张图从一次真实调用的执行路径出发，说明 <strong>AI Agent 如何借助 Lark-CLI 访问飞书能力</strong>：</p>
+<p><img src="/images/lark-cli/77b2a954-860c-40ba-9476-44d7865ab83c.png" alt="Lark-CLI 工作原理时序图"></p>
+<hr>
+<h2 id="四、可以做什么"><a href="#四、可以做什么" class="headerlink" title="四、可以做什么"></a>四、可以做什么</h2><p>仅介绍个人觉得实用的功能，更全面的功能请探索 <a href="https://open.feishu.cn/document/mcp_open_tools/feishu-cli-let-ai-actually-do-your-work-in-feishu">Lark-CLI 官方开发文档</a>。</p>
+<h3 id="（一）总结群聊消息"><a href="#（一）总结群聊消息" class="headerlink" title="（一）总结群聊消息"></a>（一）总结群聊消息</h3><p>AI 会决定执行什么 Skill 命令，自动读取群消息。适用于需求讨论群、技术方案讨论群的消息总结，归纳成需求背景。</p>
+<p><img src="/images/lark-cli/d8359b9d-1699-48b3-86b5-71dc61c87cfb.jpg" alt="群聊消息总结"></p>
+<h3 id="（二）读取需求文档和技术文档"><a href="#（二）读取需求文档和技术文档" class="headerlink" title="（二）读取需求文档和技术文档"></a>（二）读取需求文档和技术文档</h3><p>第三方飞书文档读取工具最大的问题是，对于从飞书文档里提取内容，结果拿回来的只有纯文本，图片没了，表格结构没了，画板没了，文档排版全丢了，基本上就是把所有富文本内容打平成一段话。</p>
+<p>Lark-CLI 原生支持读取富文本，从命令输出可以看出，Lark-CLI 可以直接读取文档源码进行解析，从而能够更好地理解需求文档。</p>
+<p><img src="/images/lark-cli/534bd5cf-2dee-449d-8911-b21c73398d59.jpg" alt="富文本读取命令输出"></p>
+<p>测试对文档中时序图画板的理解，会自动调用工具读取，解析得很好。</p>
+<p><img src="/images/lark-cli/be5e6024-c239-4ec5-bc3b-4040536c8859.jpg" alt="时序图画板解析"></p>
+<p><img src="/images/lark-cli/906801b9-94c1-4d23-8cac-aa7bcd58cfc9.jpg" alt="画板内容理解"></p>
+<p>最终可以准确地把需求文档和技术文档综合成 Markdown 文件。</p>
+<p><img src="/images/lark-cli/37a6ff8d-ba33-48b2-8e9a-e93cf63c414b.jpg" alt="合成 Markdown 输出"></p>
+<h3 id="（三）总结业务代码，整理成飞书文档"><a href="#（三）总结业务代码，整理成飞书文档" class="headerlink" title="（三）总结业务代码，整理成飞书文档"></a>（三）总结业务代码，整理成飞书文档</h3><p>为了在业务需求生命周期末尾总结技术方案，往往需要根据代码设计沉淀出业务文档，作为团队知识库，方便不同业务同事快速了解。</p>
+<p><img src="/images/lark-cli/c5e9f8e6-cf20-4482-b041-a3d38760e29e.jpg" alt="代码总结成文档"></p>
+<p><img src="/images/lark-cli/f44de225-3c40-4b26-a73f-40a98b915e94.jpg" alt="写入飞书文档"></p>
+<p>相比飞书 MCP，通过 CLI 方式读取到的文档内容<strong>结构更完整，包含了图片 token、流程图、代码块等富文本内容</strong>。</p>
+<p>支持 40+ 种块类型，Markdown 导入飞书之后再导出，内容完整保留，没有损耗。更夸张的是，文档里的 Mermaid 和 PlantUML 图表（支持 8 种图表类型），写入飞书后会自动转成飞书画板——不是截图，是可以直接在飞书里编辑的矢量图。</p>
+<p>这对写技术文档的人来说很实用。本地写好的 Markdown 文档，一条指令写进飞书，格式完整保留；反过来，飞书里已有的文档直接拉下来给 AI 读，结构也不会丢——图片、表格、画板全在，不再是打平的纯文本。</p>
+<p><img src="/images/lark-cli/904ca01e-f657-41e1-9498-168cc962d2e1.jpg" alt="最终效果对比"></p>
+<hr>
+<h2 id="注意事项"><a href="#注意事项" class="headerlink" title="注意事项"></a>注意事项</h2><p>Lark-CLI 本质上是打通 LLM 和飞书之间的鸿沟，使得 LLM 可以访问飞书进行实际操作。LLM 使用公司内部的 ept-claude 或者 siada，安全风险应该不存在问题，但也需注意，仅供参考。</p>
+]]></content>
+      <categories>
+        <category>VibeCoding方法论</category>
+      </categories>
+      <tags>
+        <tag>AI Coding</tag>
+        <tag>Claude Code</tag>
+        <tag>工程实践</tag>
+        <tag>Lark-CLI</tag>
+        <tag>飞书</tag>
+      </tags>
+  </entry>
 </search>
