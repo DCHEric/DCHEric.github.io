@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="从一个 H5 分享页的数据字段升级问题出发，讲清浏览器为什么通常经由 Node.js BFF 调用 gRPC 服务，iOS 为什么可以直接调用 gRPC，以及 Protobuf 在静态代码生成与运行时动态加载两种模式下的完整开发、构建和运行链路。">
+  <meta name="keywords" content="">
+  <meta name="author" content="DCH">
+  <title>从 H5 到 gRPC：看懂浏览器、Node.js BFF 与 iOS 的两种后端调用方式 | DCH's Blog</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="canonical" href="https://dcheric.github.io/2026/08/14/from-h5-to-grpc-ios-nodejs/">
+<meta name="generator" content="Hexo 7.3.0"></head>
+<body>
+<div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <a href="/" class="sidebar-logo">
+      <div class="logo-prompt">~ /dch/blog</div>
+      <div class="logo-name">DCH<span class="cursor"></span></div>
+      <div class="logo-tagline">
+        <strong>iOS</strong> · <strong>RN</strong> · <strong>大前端</strong> · <strong>AI Agent</strong>
+      </div>
+    </a>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Navigation</div>
+      <a href="/" class="nav-item">
+        <span class="nav-icon">#</span>
+        文章列表
+        <span class="nav-badge">13</span>
+      </a>
+      <a href="/archives" class="nav-item">
+        <span class="nav-icon">≡</span>
+        归档
+      </a>
+      <a href="/about" class="nav-item">
+        <span class="nav-icon">></span>
+        关于我
+      </a>
+
+      <div class="nav-section-label" style="margin-top:24px">Categories</div>
+      <a href="/" class="cat-item" data-filter="all">
+        <span class="cat-dot" style="background:var(--text-2)"></span>
+        全部
+        <span class="cat-count">13</span>
+      </a>
+        <a href="/categories/AI%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" class="cat-item">
+          <span class="cat-dot dot-ai"></span>
+          AI架构设计
+          <span class="cat-count">1</span>
+        </a>
+        <a href="/categories/iOS%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" class="cat-item">
+          <span class="cat-dot dot-ios"></span>
+          iOS架构设计
+          <span class="cat-count">3</span>
+        </a>
+        <a href="/categories/VibeCoding%E6%96%B9%E6%B3%95%E8%AE%BA/" class="cat-item">
+          <span class="cat-dot dot-vibe"></span>
+          VibeCoding方法论
+          <span class="cat-count">4</span>
+        </a>
+        <a href="/categories/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" class="cat-item">
+          <span class="cat-dot dot-other"></span>
+          架构设计
+          <span class="cat-count">1</span>
+        </a>
+        <a href="/categories/iOS/" class="cat-item">
+          <span class="cat-dot dot-ios"></span>
+          iOS
+          <span class="cat-count">3</span>
+        </a>
+        <a href="/categories/%E5%BC%80%E6%BA%90%E9%A1%B9%E7%9B%AE/" class="cat-item">
+          <span class="cat-dot dot-other"></span>
+          开源项目
+          <span class="cat-count">1</span>
+        </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sys-stat">
+        <span class="stat-dot"></span>
+        dcheric.github.io · online
+      </div>
+      <div class="sys-stat">
+        <span style="color:var(--text-3);font-family:var(--mono);font-size:10px">
+          build: hexo@7.3.0
+        </span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <div class="topbar-path">
+        
+  <a href="/" style="color:var(--text-2);transition:color .18s">dch</a>
+  <span class="sep">/</span>
+    <a href="/categories/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" style="color:var(--text-2);transition:color .18s">架构设计</a>
+    <span class="sep">/</span>
+  <span class="current" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">从 H5 到 gRPC：看懂浏览器、Node.js BFF 与 iOS 的两种后端调用方式</span>
+
+      </div>
+      <div class="topbar-right">
+        <button class="topbar-btn hamburger" id="hamburger" aria-label="菜单" title="打开菜单">☰</button>
+        <button class="topbar-btn" id="tweaks-toggle-btn" title="Tweaks" onclick="document.getElementById('tweaks-panel').classList.toggle('open')">⚙</button>
+      </div>
+    </header>
+
+    <!-- PAGE CONTENT -->
+    
+
+<div class="post-layout">
+
+  
+  <article>
+    <header class="post-header">
+        <span class="post-category-chip cat-other" style="margin-bottom:12px">架构设计</span>
+      <h1 class="post-header-title">从 H5 到 gRPC：看懂浏览器、Node.js BFF 与 iOS 的两种后端调用方式</h1>
+      <div class="post-header-meta">
+        <div class="post-header-date">
+          <span style="font-family:var(--mono);font-size:11px;color:var(--text-3)">PUBLISHED</span>
+          2026.08.14
+        </div>
+          <div class="post-header-tags">
+              <a href="/tags/gRPC/" class="post-tag" style="text-decoration:none">gRPC</a>
+              <a href="/tags/Protobuf/" class="post-tag" style="text-decoration:none">Protobuf</a>
+              <a href="/tags/iOS/" class="post-tag" style="text-decoration:none">iOS</a>
+              <a href="/tags/Node-js/" class="post-tag" style="text-decoration:none">Node.js</a>
+              <a href="/tags/H5/" class="post-tag" style="text-decoration:none">H5</a>
+              <a href="/tags/BFF/" class="post-tag" style="text-decoration:none">BFF</a>
+          </div>
+      </div>
+    </header>
+
+    <div class="post-body-content">
+      <p>最近处理一个 H5 分享页的数据兼容问题时，我碰到了一个很典型、也很容易混淆的架构问题：</p>
+<blockquote>
+<p>iOS 已经升级了最新的 gRPC APIs，可以直接读取后端新增字段；为什么 H5 仍然拿不到？H5、WebServer 和真正的后端之间，到底经过了哪些网络请求？</p>
+</blockquote>
+<p>顺着这个问题继续追下去，又会遇到更多疑问：</p>
+<ul>
+<li>浏览器为什么不和 iOS 一样直接调用 gRPC？</li>
+<li>WebServer 是不是只做了一次“转发”？</li>
+<li>iOS 为什么必须把 <code>.proto</code> 编译成 Swift 代码？</li>
+<li>Node.js 没有生成 TypeScript gRPC 代码，开发时又怎么调用接口？</li>
+<li>APIs 通过 Git submodule 引入以后，构建和运行阶段分别发生了什么？</li>
+</ul>
+<p>本文就从这些基础问题出发，把整条链路拆开说明。</p>
+<span id="more"></span>
+
+<h2 id="一、先分清-APIs、Protobuf-和-gRPC"><a href="#一、先分清-APIs、Protobuf-和-gRPC" class="headerlink" title="一、先分清 APIs、Protobuf 和 gRPC"></a>一、先分清 APIs、Protobuf 和 gRPC</h2><p>这三个概念经常一起出现，但它们不是同一件事。</p>
+<h3 id="1-APIs-仓库"><a href="#1-APIs-仓库" class="headerlink" title="1. APIs 仓库"></a>1. APIs 仓库</h3><p>团队通常会维护一个独立的 APIs 仓库，集中存放各种 <code>.proto</code> 文件，例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">apis/</span><br><span class="line">└── conversation/</span><br><span class="line">    └── v1/</span><br><span class="line">        └── conversation.proto</span><br></pre></td></tr></table></figure>
+
+<p>这个仓库本身不是一个正在运行的后端服务，更像是一套跨端共享的“接口合同”。</p>
+<h3 id="2-Protobuf"><a href="#2-Protobuf" class="headerlink" title="2. Protobuf"></a>2. Protobuf</h3><p>Protobuf 是接口描述和二进制序列化方案。<code>.proto</code> 文件会定义：</p>
+<ul>
+<li>服务名称；</li>
+<li>RPC 方法名称；</li>
+<li>请求和响应的数据结构；</li>
+<li>字段类型；</li>
+<li>字段在二进制协议中的编号。</li>
+</ul>
+<p>例如：</p>
+<figure class="highlight proto"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">service </span><span class="title class_">ConversationService</span> &#123;</span><br><span class="line">  <span class="function"><span class="keyword">rpc</span> GetConversationHistoryByIds(</span></span><br><span class="line"><span class="function">    GetConversationHistoryByIdsRequest</span></span><br><span class="line"><span class="function">  ) <span class="keyword">returns</span> (</span></span><br><span class="line"><span class="function">    GetConversationHistoryResponse</span></span><br><span class="line"><span class="function">  )</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">message </span><span class="title class_">GetConversationHistoryByIdsRequest</span> &#123;</span><br><span class="line">  <span class="type">string</span> account_id = <span class="number">1</span>;</span><br><span class="line">  <span class="type">string</span> topic_id = <span class="number">2</span>;</span><br><span class="line">  <span class="keyword">repeated</span> <span class="type">string</span> context_ids = <span class="number">3</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>它表达的是一份跨语言合同，而不是 Swift、TypeScript 或 Java 代码。</p>
+<h3 id="3-gRPC"><a href="#3-gRPC" class="headerlink" title="3. gRPC"></a>3. gRPC</h3><p>gRPC 是客户端和服务端按照这份合同通信的框架。常见形态是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">HTTP/2 + Protobuf 二进制 + Service/Method 语义</span><br></pre></td></tr></table></figure>
+
+<p>可以简单理解为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">.proto = 双方共同遵守的说明书</span><br><span class="line">Protobuf = 数据如何编码和解码</span><br><span class="line">gRPC = 双方如何发起远程方法调用</span><br></pre></td></tr></table></figure>
+
+<h2 id="二、H5-与-iOS-的整体调用链路"><a href="#二、H5-与-iOS-的整体调用链路" class="headerlink" title="二、H5 与 iOS 的整体调用链路"></a>二、H5 与 iOS 的整体调用链路</h2><p>先看两条链路最核心的区别：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">H5 分享页：</span><br><span class="line"></span><br><span class="line">浏览器中的 JavaScript</span><br><span class="line">        │</span><br><span class="line">        │ HTTP GET /share_api/message/...</span><br><span class="line">        │ 返回 JSON</span><br><span class="line">        ▼</span><br><span class="line">Node.js WebServer / BFF</span><br><span class="line">        │</span><br><span class="line">        │ gRPC over HTTP/2</span><br><span class="line">        │ Protobuf 二进制</span><br><span class="line">        ▼</span><br><span class="line">真正的业务后端 ConversationService</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">iOS App：</span><br><span class="line"></span><br><span class="line">iOS 业务代码</span><br><span class="line">        │</span><br><span class="line">        │ 调用生成的 Swift gRPC Client</span><br><span class="line">        │ gRPC over HTTP/2 + Protobuf</span><br><span class="line">        ▼</span><br><span class="line">真正的业务后端 ConversationService</span><br></pre></td></tr></table></figure>
+
+<p>一句话概括：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">H5：浏览器 HTTP → BFF 翻译 → gRPC → 后端</span><br><span class="line">iOS：App gRPC → 后端</span><br></pre></td></tr></table></figure>
+
+<h2 id="三、H5-仓库不是一台服务器"><a href="#三、H5-仓库不是一台服务器" class="headerlink" title="三、H5 仓库不是一台服务器"></a>三、H5 仓库不是一台服务器</h2><p>这是理解整条链路最重要的一步。</p>
+<p>H5 前端仓库最终构建出来的是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">HTML + JavaScript + CSS + 图片</span><br></pre></td></tr></table></figure>
+
+<p>这些静态文件会发布到 CDN 或静态资源平台。当用户打开分享链接时，浏览器先下载静态文件，然后在用户设备上执行 JavaScript。</p>
+<p>因此，真正发送 HTTP 请求的是用户的浏览器，不是“H5 仓库”或某个名叫 H5 的服务器进程。</p>
+<p>典型代码如下：</p>
+<figure class="highlight javascript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">function</span> <span class="title function_">getSharedHistory</span>(<span class="params">shareParams</span>) &#123;</span><br><span class="line">  <span class="keyword">const</span> response = <span class="keyword">await</span> <span class="title function_">fetch</span>(<span class="string">`/share_api/message/<span class="subst">$&#123;shareParams&#125;</span>`</span>, &#123;</span><br><span class="line">    <span class="attr">method</span>: <span class="string">&#x27;GET&#x27;</span>,</span><br><span class="line">    <span class="attr">headers</span>: &#123;</span><br><span class="line">      <span class="string">&#x27;Content-Type&#x27;</span>: <span class="string">&#x27;application/json&#x27;</span>,</span><br><span class="line">    &#125;,</span><br><span class="line">  &#125;)</span><br><span class="line"></span><br><span class="line">  <span class="keyword">return</span> response.<span class="title function_">json</span>()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>严格来说，这个 GET 请求没有 JSON 请求体：</p>
+<ul>
+<li>加密后的分享参数放在 URL 路径里；</li>
+<li>服务端返回 JSON；</li>
+<li>浏览器通过 <code>response.json()</code> 解析响应。</li>
+</ul>
+<h2 id="四、浏览器为什么不直接调用普通-gRPC"><a href="#四、浏览器为什么不直接调用普通-gRPC" class="headerlink" title="四、浏览器为什么不直接调用普通 gRPC"></a>四、浏览器为什么不直接调用普通 gRPC</h2><p>iOS 可以集成原生 gRPC SDK，建立 HTTP&#x2F;2 连接、发送 Protobuf 二进制数据，并处理 TLS、Token 和 metadata。</p>
+<p>浏览器的网络能力和安全模型不同，不能像原生 App 一样随意使用普通 gRPC Client。浏览器如果要直连 gRPC，通常需要额外建设：</p>
+<ul>
+<li>gRPC-Web 客户端；</li>
+<li>Envoy 或其他协议转换网关；</li>
+<li>浏览器跨域配置；</li>
+<li>面向公开网络的鉴权方案；</li>
+<li>对应的 TypeScript Protobuf 代码生成与打包流程。</li>
+</ul>
+<p>分享页还有一个特殊之处：访问者可能没有登录，甚至没有安装 App。此时如果直接暴露内部 gRPC 服务，服务地址、鉴权方式和访问控制都会变得更复杂。</p>
+<p>因此，常见做法是在浏览器和真正后端之间增加一个 BFF（Backend for Frontend）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">浏览器容易使用的 HTTP + JSON</span><br><span class="line">                 ↓</span><br><span class="line">              BFF</span><br><span class="line">                 ↓</span><br><span class="line">内部服务使用的 gRPC + Protobuf</span><br></pre></td></tr></table></figure>
+
+<p>BFF 不只是简单转发，它通常还负责：</p>
+<ul>
+<li>解析或解密分享参数；</li>
+<li>校验分享内容能否访问；</li>
+<li>隐藏内部服务地址；</li>
+<li>补充服务端鉴权和 metadata；</li>
+<li>调用内部 gRPC 服务；</li>
+<li>把 Protobuf 响应转换成浏览器可用的 JSON；</li>
+<li>控制最终暴露给公网的数据范围。</li>
+</ul>
+<h2 id="五、Node-js-BFF-如何接住-HTTP-请求"><a href="#五、Node-js-BFF-如何接住-HTTP-请求" class="headerlink" title="五、Node.js BFF 如何接住 HTTP 请求"></a>五、Node.js BFF 如何接住 HTTP 请求</h2><p>以 NestJS 为例，Controller 对外提供 HTTP 接口：</p>
+<figure class="highlight typescript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Controller</span>(<span class="string">&#x27;share_api&#x27;</span>)</span><br><span class="line"><span class="keyword">export</span> <span class="keyword">class</span> <span class="title class_">ShareController</span> &#123;</span><br><span class="line">  <span class="title function_">constructor</span>(<span class="params"><span class="keyword">private</span> <span class="keyword">readonly</span> <span class="attr">shareService</span>: <span class="title class_">ShareService</span></span>) &#123;&#125;</span><br><span class="line"></span><br><span class="line">  <span class="meta">@Get</span>(<span class="string">&#x27;message/:shareParams&#x27;</span>)</span><br><span class="line">  <span class="keyword">async</span> <span class="title function_">getSharedHistory</span>(<span class="params"></span></span><br><span class="line"><span class="params">    <span class="meta">@Param</span>(<span class="string">&#x27;shareParams&#x27;</span>) <span class="attr">shareParams</span>: <span class="built_in">string</span>,</span></span><br><span class="line"><span class="params">  </span>) &#123;</span><br><span class="line">    <span class="keyword">const</span> params = <span class="title function_">decryptShareParams</span>(shareParams)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="variable language_">this</span>.<span class="property">shareService</span>.<span class="title function_">getSharedHistory</span>(&#123;</span><br><span class="line">      <span class="attr">accountId</span>: params.<span class="property">accountId</span>,</span><br><span class="line">      <span class="attr">topicId</span>: params.<span class="property">topicId</span>,</span><br><span class="line">      <span class="attr">contextIds</span>: params.<span class="property">contextIds</span>,</span><br><span class="line">    &#125;)</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>路由由两部分组成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">@Controller(&#x27;share_api&#x27;)</span><br><span class="line">            +</span><br><span class="line">@Get(&#x27;message/:shareParams&#x27;)</span><br><span class="line">            =</span><br><span class="line">GET /share_api/message/:shareParams</span><br></pre></td></tr></table></figure>
+
+<p>Controller 返回普通 JavaScript 对象后，NestJS 会自动把它序列化成 HTTP JSON 响应。</p>
+<h2 id="六、iOS：提前把-proto-编译成-Swift"><a href="#六、iOS：提前把-proto-编译成-Swift" class="headerlink" title="六、iOS：提前把 .proto 编译成 Swift"></a>六、iOS：提前把 <code>.proto</code> 编译成 Swift</h2><p>iOS 通常采用静态代码生成模式：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">conversation.proto</span><br><span class="line">        │</span><br><span class="line">        │ protoc + Swift 插件</span><br><span class="line">        ▼</span><br><span class="line">conversation.pb.swift</span><br><span class="line">conversation.grpc.swift</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">编译进 iOS App</span><br></pre></td></tr></table></figure>
+
+<p>生成代码会提供强类型的请求、响应和 RPC 方法信息，例如：</p>
+<figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> path <span class="operator">=</span> <span class="type">ConversationServiceClientMetadata</span></span><br><span class="line">    .<span class="type">Methods</span></span><br><span class="line">    .getConversationHistory</span><br><span class="line">    .path</span><br><span class="line"></span><br><span class="line"><span class="keyword">let</span> request <span class="operator">=</span> <span class="type">GetConversationHistoryRequest</span>.with &#123;</span><br><span class="line">    <span class="variable">$0</span>.topicID <span class="operator">=</span> topicId</span><br><span class="line">    <span class="variable">$0</span>.limit <span class="operator">=</span> <span class="type">Int32</span>(limit)</span><br><span class="line">    <span class="variable">$0</span>.order <span class="operator">=</span> .desc</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">let</span> responseType <span class="operator">=</span> <span class="type">GetConversationHistoryResponse</span>.<span class="keyword">self</span></span><br><span class="line"></span><br><span class="line">grpcManager.makeUnaryCallWithToken(</span><br><span class="line">    path: path,</span><br><span class="line">    request: request,</span><br><span class="line">    responseType: responseType,</span><br><span class="line">    onSuccess: onSuccess,</span><br><span class="line">    onFailure: onFailure</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>iOS 开发者不需要手写字段编码规则，也不需要用字符串猜测方法名称。生成代码已经告诉 Swift 编译器：</p>
+<ul>
+<li>请求是什么类型；</li>
+<li>响应是什么类型；</li>
+<li>字段是否存在以及字段类型；</li>
+<li>RPC path 是什么；</li>
+<li>如何编码和解码 Protobuf。</li>
+</ul>
+<p>如果使用了不存在的字段，通常在编译期就会报错。</p>
+<h2 id="七、Node-js：不生成-TypeScript-文件，也能调用-gRPC"><a href="#七、Node-js：不生成-TypeScript-文件，也能调用-gRPC" class="headerlink" title="七、Node.js：不生成 TypeScript 文件，也能调用 gRPC"></a>七、Node.js：不生成 TypeScript 文件，也能调用 gRPC</h2><p>Node.js 也可以把 <code>.proto</code> 提前生成 TypeScript 代码，例如使用 <code>ts-proto</code> 或 <code>grpc-tools</code>。但很多 Node.js 项目会选择另一种模式：运行时动态加载 <code>.proto</code>。</p>
+<p>典型配置如下：</p>
+<figure class="highlight typescript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">return</span> <span class="title class_">ClientProxyFactory</span>.<span class="title function_">create</span>(&#123;</span><br><span class="line">  <span class="attr">transport</span>: <span class="title class_">Transport</span>.<span class="property">GRPC</span>,</span><br><span class="line">  <span class="attr">options</span>: &#123;</span><br><span class="line">    <span class="attr">url</span>: serviceEndpoint,</span><br><span class="line">    <span class="attr">package</span>: [<span class="string">&#x27;example.conversation.v1&#x27;</span>],</span><br><span class="line">    <span class="attr">protoPath</span>: [</span><br><span class="line">      path.<span class="title function_">resolve</span>(<span class="string">&#x27;./apis/conversation/v1/conversation.proto&#x27;</span>),</span><br><span class="line">    ],</span><br><span class="line">    <span class="attr">loader</span>: &#123;</span><br><span class="line">      <span class="attr">keepCase</span>: <span class="literal">true</span>,</span><br><span class="line">      <span class="attr">longs</span>: <span class="title class_">String</span>,</span><br><span class="line">      <span class="attr">enums</span>: <span class="title class_">String</span>,</span><br><span class="line">      <span class="attr">defaults</span>: <span class="literal">true</span>,</span><br><span class="line">      <span class="attr">oneofs</span>: <span class="literal">true</span>,</span><br><span class="line">      <span class="attr">includeDirs</span>: [path.<span class="title function_">resolve</span>(<span class="string">&#x27;./apis&#x27;</span>)],</span><br><span class="line">    &#125;,</span><br><span class="line">  &#125;,</span><br><span class="line">&#125;)</span><br></pre></td></tr></table></figure>
+
+<p>这里并不会在磁盘上生成 <code>conversation.ts</code>，而是告诉框架：</p>
+<blockquote>
+<p>服务启动时读取这份 <code>.proto</code>，根据里面的 package、service、rpc 和 message，在内存中创建 gRPC Client。</p>
+</blockquote>
+<p>业务代码可以通过 Service 名称获取动态客户端：</p>
+<figure class="highlight typescript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> service = client.<span class="title function_">getService</span>(<span class="string">&#x27;ConversationService&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">const</span> response = <span class="keyword">await</span> <span class="title function_">firstValueFrom</span>(</span><br><span class="line">  service.<span class="title class_">GetConversationHistoryByIds</span>(</span><br><span class="line">    &#123;</span><br><span class="line">      <span class="attr">account_id</span>: accountId,</span><br><span class="line">      <span class="attr">topic_id</span>: topicId,</span><br><span class="line">      <span class="attr">context_ids</span>: contextIds,</span><br><span class="line">    &#125;,</span><br><span class="line">    metadata,</span><br><span class="line">  ),</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<h2 id="八、没有生成代码，开发时怎么知道参数"><a href="#八、没有生成代码，开发时怎么知道参数" class="headerlink" title="八、没有生成代码，开发时怎么知道参数"></a>八、没有生成代码，开发时怎么知道参数</h2><p>动态加载模式下，开发者主要通过 <code>.proto</code> 确认接口。</p>
+<p>开发流程通常是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">1. 更新 APIs 仓库或 submodule</span><br><span class="line">2. 打开目标 .proto</span><br><span class="line">3. 找到 service 和 rpc 方法</span><br><span class="line">4. 找到对应 Request message</span><br><span class="line">5. 根据 message 字段手写 JavaScript 请求对象</span><br><span class="line">6. 必要时手写 TypeScript interface</span><br><span class="line">7. 运行服务，由动态 gRPC Client 发起调用</span><br></pre></td></tr></table></figure>
+
+<p>例如 <code>.proto</code> 中定义：</p>
+<figure class="highlight proto"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">message </span><span class="title class_">GetConversationHistoryByIdsRequest</span> &#123;</span><br><span class="line">  <span class="type">string</span> account_id = <span class="number">1</span>;</span><br><span class="line">  <span class="type">string</span> topic_id = <span class="number">2</span>;</span><br><span class="line">  <span class="keyword">repeated</span> <span class="type">string</span> context_ids = <span class="number">3</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>那么 TypeScript 请求就写成：</p>
+<figure class="highlight typescript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">  <span class="attr">account_id</span>: accountId,</span><br><span class="line">  <span class="attr">topic_id</span>: topicId,</span><br><span class="line">  <span class="attr">context_ids</span>: contextIds,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果配置了 <code>keepCase: true</code>，字段会保留 <code>.proto</code> 中的 snake_case，因此应使用 <code>account_id</code>，而不是 <code>accountId</code>。</p>
+<p>为了获得一些类型提示，开发者可以手写类型：</p>
+<figure class="highlight typescript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">interface</span> <span class="title class_">ConversationServiceClient</span> &#123;</span><br><span class="line">  <span class="title class_">GetConversationHistoryByIds</span>(</span><br><span class="line">    <span class="attr">request</span>: &#123;</span><br><span class="line">      <span class="attr">account_id</span>: <span class="built_in">string</span></span><br><span class="line">      <span class="attr">topic_id</span>: <span class="built_in">string</span></span><br><span class="line">      <span class="attr">context_ids</span>: <span class="built_in">string</span>[]</span><br><span class="line">    &#125;,</span><br><span class="line">    <span class="attr">metadata</span>: grpc.<span class="property">Metadata</span>,</span><br><span class="line">  ): <span class="title class_">Observable</span>&lt;<span class="title class_">GetConversationHistoryResponse</span>&gt;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>但要注意：这段 TypeScript 类型只是开发辅助，不负责真正的 Protobuf 编解码。如果手写类型和 <code>.proto</code> 不一致，TypeScript 未必能发现，问题可能要到运行时才暴露。</p>
+<h2 id="九、Node-js-服务构建时发生了什么"><a href="#九、Node-js-服务构建时发生了什么" class="headerlink" title="九、Node.js 服务构建时发生了什么"></a>九、Node.js 服务构建时发生了什么</h2><p>假设 WebServer 通过 Git submodule 引入 APIs：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">webserver/</span><br><span class="line">├── apps/</span><br><span class="line">├── libs/</span><br><span class="line">└── apis/     → 指向 APIs 仓库的某个 commit</span><br></pre></td></tr></table></figure>
+
+<p>CI 构建通常包括：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">git submodule init</span><br><span class="line">git submodule update</span><br><span class="line">pnpm install</span><br><span class="line">pnpm <span class="built_in">exec</span> nest build conversation-service</span><br><span class="line">docker build ...</span><br></pre></td></tr></table></figure>
+
+<p>这些步骤分别负责：</p>
+<h3 id="1-拉取确定版本的协议"><a href="#1-拉取确定版本的协议" class="headerlink" title="1. 拉取确定版本的协议"></a>1. 拉取确定版本的协议</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git submodule update</span><br></pre></td></tr></table></figure>
+
+<p>主仓库记录的不是 APIs 仓库的所有代码，而是它应该指向的确定 commit。CI 根据这个指针把对应版本拉到 <code>apis/</code>。</p>
+<h3 id="2-TypeScript-编译成-JavaScript"><a href="#2-TypeScript-编译成-JavaScript" class="headerlink" title="2. TypeScript 编译成 JavaScript"></a>2. TypeScript 编译成 JavaScript</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">pnpm <span class="built_in">exec</span> nest build conversation-service</span><br></pre></td></tr></table></figure>
+
+<p>这个步骤主要完成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">service.ts → service.js</span><br><span class="line">controller.ts → controller.js</span><br></pre></td></tr></table></figure>
+
+<p>在动态加载模式下，它通常不会把 <code>.proto</code> 生成 TypeScript 代码。</p>
+<h3 id="3-把原始-proto-放进-Docker-镜像"><a href="#3-把原始-proto-放进-Docker-镜像" class="headerlink" title="3. 把原始 .proto 放进 Docker 镜像"></a>3. 把原始 <code>.proto</code> 放进 Docker 镜像</h3><p>Dockerfile 会同时复制编译结果和 APIs：</p>
+<figure class="highlight dockerfile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">ADD</span><span class="language-bash"> dist /app/dist</span></span><br><span class="line"><span class="keyword">ADD</span><span class="language-bash"> apis /app/apis</span></span><br><span class="line"><span class="keyword">ADD</span><span class="language-bash"> node_modules /app/node_modules</span></span><br></pre></td></tr></table></figure>
+
+<p>最终镜像中同时存在：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">/app/dist/    编译后的业务 JavaScript</span><br><span class="line">/app/apis/    原始 .proto 文件</span><br></pre></td></tr></table></figure>
+
+<h2 id="十、服务启动时如何动态创建-gRPC-Client"><a href="#十、服务启动时如何动态创建-gRPC-Client" class="headerlink" title="十、服务启动时如何动态创建 gRPC Client"></a>十、服务启动时如何动态创建 gRPC Client</h2><p>容器启动以后，Node.js 执行编译后的业务代码。第一次创建 gRPC Client 时，大致发生下面这些事情：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">Node.js 服务启动</span><br><span class="line">      ↓</span><br><span class="line">读取 /app/apis/.../conversation.proto</span><br><span class="line">      ↓</span><br><span class="line">解析 package、service、rpc 和 message</span><br><span class="line">      ↓</span><br><span class="line">在内存中创建动态 Service 方法</span><br><span class="line">      ↓</span><br><span class="line">创建请求编码器和响应解码器</span><br><span class="line">      ↓</span><br><span class="line">连接真正的 gRPC 后端地址</span><br></pre></td></tr></table></figure>
+
+<p>这里的“动态生成”不是生成一个可以在目录中看到的 <code>.ts</code> 或 <code>.js</code> 文件，而是在进程内存中构造类似这样的能力：</p>
+<figure class="highlight javascript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">service = &#123;</span><br><span class="line">  <span class="title class_">GetConversationHistory</span>: <span class="keyword">function</span> (<span class="params"></span>) &#123; <span class="comment">/* ... */</span> &#125;,</span><br><span class="line">  <span class="title class_">GetConversationHistoryByIds</span>: <span class="keyword">function</span> (<span class="params"></span>) &#123; <span class="comment">/* ... */</span> &#125;,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>真正调用接口时：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">JavaScript 请求对象</span><br><span class="line">      ↓</span><br><span class="line">根据 .proto 字段编号编码成 Protobuf</span><br><span class="line">      ↓</span><br><span class="line">通过 HTTP/2 发送给真正后端</span><br><span class="line">      ↓</span><br><span class="line">收到 Protobuf 二进制响应</span><br><span class="line">      ↓</span><br><span class="line">根据 .proto 解码成 JavaScript 对象</span><br><span class="line">      ↓</span><br><span class="line">NestJS 转成 JSON 返回浏览器</span><br></pre></td></tr></table></figure>
+
+<h2 id="十一、为什么只升级-APIs-版本就能让新字段出现"><a href="#十一、为什么只升级-APIs-版本就能让新字段出现" class="headerlink" title="十一、为什么只升级 APIs 版本就能让新字段出现"></a>十一、为什么只升级 APIs 版本就能让新字段出现</h2><p>假设真正后端新增了一个字段：</p>
+<figure class="highlight proto"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">map&lt;<span class="type">string</span>, CallbackInfo&gt; callback_info_map = <span class="number">14</span>;</span><br></pre></td></tr></table></figure>
+
+<p>字段名只是方便人阅读，Protobuf 在线上传输时真正关键的是字段编号 <code>14</code> 和字段类型。</p>
+<p>如果 WebServer 仍加载旧版 <code>.proto</code>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">真正后端返回字段 14</span><br><span class="line">      ↓</span><br><span class="line">WebServer 的旧协议不知道字段 14 是什么</span><br><span class="line">      ↓</span><br><span class="line">无法把它解析成 callback_info_map</span><br><span class="line">      ↓</span><br><span class="line">H5 的 JSON 中看不到该字段</span><br></pre></td></tr></table></figure>
+
+<p>升级 APIs submodule 后：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">新版 .proto 进入 Docker 镜像</span><br><span class="line">      ↓</span><br><span class="line">服务启动时加载新版协议</span><br><span class="line">      ↓</span><br><span class="line">解码器知道字段 14 是 callback_info_map</span><br><span class="line">      ↓</span><br><span class="line">解码成 JavaScript 对象</span><br><span class="line">      ↓</span><br><span class="line">返回给 H5 的 JSON 中出现 callback_info_map</span><br></pre></td></tr></table></figure>
+
+<p>因此，虽然 H5 代码一行都没改，但 WebServer 升级协议并重新部署后，H5 重新请求接口就能收到新字段。</p>
+<h2 id="十二、静态代码生成与动态加载怎么选"><a href="#十二、静态代码生成与动态加载怎么选" class="headerlink" title="十二、静态代码生成与动态加载怎么选"></a>十二、静态代码生成与动态加载怎么选</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>iOS 静态生成</th>
+<th>Node.js 动态加载</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>协议使用时间</td>
+<td>App 编译前</td>
+<td>服务启动时</td>
+</tr>
+<tr>
+<td>产物</td>
+<td>Swift 消息类型和 Client</td>
+<td>内存中的动态 Client</td>
+</tr>
+<tr>
+<td>类型安全</td>
+<td>强，很多错误编译期发现</td>
+<td>相对弱，部分错误运行时发现</td>
+</tr>
+<tr>
+<td>IDE 自动补全</td>
+<td>完整</td>
+<td>取决于手写类型</td>
+</tr>
+<tr>
+<td>生成文件维护</td>
+<td>需要</td>
+<td>不需要</td>
+</tr>
+<tr>
+<td>协议升级</td>
+<td>更新生成的 Swift APIs</td>
+<td>更新 <code>.proto</code> &#x2F; submodule</td>
+</tr>
+<tr>
+<td>运行时是否需要 <code>.proto</code></td>
+<td>通常不需要</td>
+<td>需要</td>
+</tr>
+</tbody></table>
+<p>两种方式没有绝对的好坏：</p>
+<ul>
+<li>移动端更重视强类型、编译期检查和固定产物，静态生成更自然；</li>
+<li>Node.js 服务更强调快速接入和减少生成文件，动态加载比较灵活；</li>
+<li>如果 Node.js 项目规模变大、接口很多，也可以改为 <code>ts-proto</code> 等静态生成方案，提高类型安全。</li>
+</ul>
+<h2 id="十三、排查类似问题的实用顺序"><a href="#十三、排查类似问题的实用顺序" class="headerlink" title="十三、排查类似问题的实用顺序"></a>十三、排查类似问题的实用顺序</h2><p>以后再遇到“App 有字段，但 H5 没字段”，可以按照下面的顺序检查：</p>
+<ol>
+<li>真正后端是否已经返回该字段；</li>
+<li>iOS 和 WebServer 分别使用哪个 APIs 版本；</li>
+<li>WebServer 的 <code>.proto</code> 是否已经包含该字段编号和类型；</li>
+<li>CI 是否正确更新 submodule；</li>
+<li>Docker 镜像是否包含新版 <code>apis/</code>；</li>
+<li>测试环境是否部署了新镜像；</li>
+<li>浏览器 Network 中实际命中了哪个环境；</li>
+<li>HTTP Response 是否已经包含字段；</li>
+<li>H5 数据转换层是否又把字段丢弃了；</li>
+<li>页面是否真正消费和展示了这个字段。</li>
+</ol>
+<p>其中，第 8 步和第 9 步很容易混淆：</p>
+<ul>
+<li>Network Response 有字段，页面没有：问题在 H5 解析或渲染；</li>
+<li>Network Response 没字段：继续检查 WebServer、协议版本和真正后端。</li>
+</ul>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>整套架构最终可以收敛成四句话：</p>
+<ol>
+<li>H5 仓库发布的是静态资源，真正发请求的是浏览器。</li>
+<li>浏览器通过 HTTP&#x2F;JSON 请求 BFF，BFF 再通过 gRPC&#x2F;Protobuf 请求真正后端。</li>
+<li>iOS 把 <code>.proto</code> 提前生成 Swift 代码；Node.js 可以选择启动时动态加载 <code>.proto</code>。</li>
+<li>动态加载并不等于不依赖 APIs；WebServer 必须把正确版本的 <code>.proto</code> 带进镜像，才能正确编码和解码新字段。</li>
+</ol>
+<p>理解“谁在发请求、谁在读取 <code>.proto</code>、协议在什么时间被转换”之后，H5、BFF、gRPC、submodule 和移动端 APIs 之间的关系就不再神秘了。</p>
+
+    </div>
+
+    
+      <nav class="post-nav">
+          <div></div>
+          <a href="/2026/05/06/lark-cli-ai-feishu-bridge/" class="post-nav-item next">
+            <span class="post-nav-label">下一篇 →</span>
+            <span class="post-nav-title">Lark-CLI：让 AI 真正用上飞书</span>
+          </a>
+      </nav>
+      <div class="post-comments">
+        <script src="https://utteranc.es/client.js"
+                repo="DCHEric/DCHEric.github.io"
+                issue-term="pathname"
+                theme="preferred-color-scheme"
+                label="comment"
+                crossorigin="anonymous"
+                async>
+        </script>
+      </div>
+  </article>
+
+  
+  <aside class="toc-wrap">
+    <div class="toc-label">Contents</div>
+    <div class="toc">
+      <ol class="toc-list"><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E5%88%86%E6%B8%85-APIs%E3%80%81Protobuf-%E5%92%8C-gRPC"><span class="toc-list-text">一、先分清 APIs、Protobuf 和 gRPC</span></a><ol class="toc-list-child"><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#1-APIs-%E4%BB%93%E5%BA%93"><span class="toc-list-text">1. APIs 仓库</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#2-Protobuf"><span class="toc-list-text">2. Protobuf</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#3-gRPC"><span class="toc-list-text">3. gRPC</span></a></li></ol></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E4%BA%8C%E3%80%81H5-%E4%B8%8E-iOS-%E7%9A%84%E6%95%B4%E4%BD%93%E8%B0%83%E7%94%A8%E9%93%BE%E8%B7%AF"><span class="toc-list-text">二、H5 与 iOS 的整体调用链路</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E4%B8%89%E3%80%81H5-%E4%BB%93%E5%BA%93%E4%B8%8D%E6%98%AF%E4%B8%80%E5%8F%B0%E6%9C%8D%E5%8A%A1%E5%99%A8"><span class="toc-list-text">三、H5 仓库不是一台服务器</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E5%9B%9B%E3%80%81%E6%B5%8F%E8%A7%88%E5%99%A8%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E7%9B%B4%E6%8E%A5%E8%B0%83%E7%94%A8%E6%99%AE%E9%80%9A-gRPC"><span class="toc-list-text">四、浏览器为什么不直接调用普通 gRPC</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E4%BA%94%E3%80%81Node-js-BFF-%E5%A6%82%E4%BD%95%E6%8E%A5%E4%BD%8F-HTTP-%E8%AF%B7%E6%B1%82"><span class="toc-list-text">五、Node.js BFF 如何接住 HTTP 请求</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E5%85%AD%E3%80%81iOS%EF%BC%9A%E6%8F%90%E5%89%8D%E6%8A%8A-proto-%E7%BC%96%E8%AF%91%E6%88%90-Swift"><span class="toc-list-text">六、iOS：提前把 .proto 编译成 Swift</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E4%B8%83%E3%80%81Node-js%EF%BC%9A%E4%B8%8D%E7%94%9F%E6%88%90-TypeScript-%E6%96%87%E4%BB%B6%EF%BC%8C%E4%B9%9F%E8%83%BD%E8%B0%83%E7%94%A8-gRPC"><span class="toc-list-text">七、Node.js：不生成 TypeScript 文件，也能调用 gRPC</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E5%85%AB%E3%80%81%E6%B2%A1%E6%9C%89%E7%94%9F%E6%88%90%E4%BB%A3%E7%A0%81%EF%BC%8C%E5%BC%80%E5%8F%91%E6%97%B6%E6%80%8E%E4%B9%88%E7%9F%A5%E9%81%93%E5%8F%82%E6%95%B0"><span class="toc-list-text">八、没有生成代码，开发时怎么知道参数</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E4%B9%9D%E3%80%81Node-js-%E6%9C%8D%E5%8A%A1%E6%9E%84%E5%BB%BA%E6%97%B6%E5%8F%91%E7%94%9F%E4%BA%86%E4%BB%80%E4%B9%88"><span class="toc-list-text">九、Node.js 服务构建时发生了什么</span></a><ol class="toc-list-child"><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#1-%E6%8B%89%E5%8F%96%E7%A1%AE%E5%AE%9A%E7%89%88%E6%9C%AC%E7%9A%84%E5%8D%8F%E8%AE%AE"><span class="toc-list-text">1. 拉取确定版本的协议</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#2-TypeScript-%E7%BC%96%E8%AF%91%E6%88%90-JavaScript"><span class="toc-list-text">2. TypeScript 编译成 JavaScript</span></a></li><li class="toc-list-item toc-list-level-3"><a class="toc-list-link" href="#3-%E6%8A%8A%E5%8E%9F%E5%A7%8B-proto-%E6%94%BE%E8%BF%9B-Docker-%E9%95%9C%E5%83%8F"><span class="toc-list-text">3. 把原始 .proto 放进 Docker 镜像</span></a></li></ol></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E5%8D%81%E3%80%81%E6%9C%8D%E5%8A%A1%E5%90%AF%E5%8A%A8%E6%97%B6%E5%A6%82%E4%BD%95%E5%8A%A8%E6%80%81%E5%88%9B%E5%BB%BA-gRPC-Client"><span class="toc-list-text">十、服务启动时如何动态创建 gRPC Client</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E5%8F%AA%E5%8D%87%E7%BA%A7-APIs-%E7%89%88%E6%9C%AC%E5%B0%B1%E8%83%BD%E8%AE%A9%E6%96%B0%E5%AD%97%E6%AE%B5%E5%87%BA%E7%8E%B0"><span class="toc-list-text">十一、为什么只升级 APIs 版本就能让新字段出现</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E9%9D%99%E6%80%81%E4%BB%A3%E7%A0%81%E7%94%9F%E6%88%90%E4%B8%8E%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E6%80%8E%E4%B9%88%E9%80%89"><span class="toc-list-text">十二、静态代码生成与动态加载怎么选</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E6%8E%92%E6%9F%A5%E7%B1%BB%E4%BC%BC%E9%97%AE%E9%A2%98%E7%9A%84%E5%AE%9E%E7%94%A8%E9%A1%BA%E5%BA%8F"><span class="toc-list-text">十三、排查类似问题的实用顺序</span></a></li><li class="toc-list-item toc-list-level-2"><a class="toc-list-link" href="#%E6%80%BB%E7%BB%93"><span class="toc-list-text">总结</span></a></li></ol>
+    </div>
+  </aside>
+
+</div>
+
+
+
+    <!-- FOOTER -->
+    <footer class="footer">
+      <div class="footer-left">
+        © 2026 <a href="https://dcheric.github.io">DCH</a>
+        &nbsp;·&nbsp; Powered by Hexo &nbsp;·&nbsp; Hosted on GitHub Pages
+      </div>
+      <div class="footer-links">
+            <a href="https://github.com/DCHEric" class="footer-link" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://x.com/DCHtigerr" class="footer-link" target="_blank" rel="noopener">X</a>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- TWEAKS PANEL -->
+<div id="tweaks-panel">
+  <div class="tweaks-title">Tweaks</div>
+  <div class="tweak-row">
+    <span class="tweak-label">主题色</span>
+    <select class="tweak-select" id="accentSel">
+      <option value="">Cyan</option>
+      <option value="accent-green">Green</option>
+      <option value="accent-amber">Amber</option>
+      <option value="accent-purple">Purple</option>
+    </select>
+  </div>
+  <div class="tweak-row">
+    <span class="tweak-label">紧凑模式</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="compactToggle">
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>
+  </div>
+  <div class="tweak-row">
+    <span class="tweak-label">扫描线</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="scanlineToggle" checked>
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>
+  </div>
+  <div class="tweak-row">
+    <span class="tweak-label">网格背景</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="gridBgToggle" checked>
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>
+  </div>
+</div>
+
+<script src="/js/main.js"></script>
+</body>
+</html>
