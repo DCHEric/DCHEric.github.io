@@ -59,11 +59,6 @@
           iOS架构设计
           <span class="cat-count">3</span>
         </a>
-        <a href="/categories/VibeCoding%E6%96%B9%E6%B3%95%E8%AE%BA/" class="cat-item">
-          <span class="cat-dot dot-vibe"></span>
-          VibeCoding方法论
-          <span class="cat-count">4</span>
-        </a>
         <a href="/categories/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" class="cat-item">
           <span class="cat-dot dot-other"></span>
           架构设计
@@ -73,6 +68,11 @@
           <span class="cat-dot dot-ios"></span>
           iOS
           <span class="cat-count">3</span>
+        </a>
+        <a href="/categories/VibeCoding%E6%96%B9%E6%B3%95%E8%AE%BA/" class="cat-item">
+          <span class="cat-dot dot-vibe"></span>
+          VibeCoding方法论
+          <span class="cat-count">4</span>
         </a>
         <a href="/categories/%E5%BC%80%E6%BA%90%E9%A1%B9%E7%9B%AE/" class="cat-item">
           <span class="cat-dot dot-other"></span>
@@ -158,7 +158,7 @@
 <span id="more"></span>
 
 <h2 id="一、为什么需要「桥」：两个世界，两种语言"><a href="#一、为什么需要「桥」：两个世界，两种语言" class="headerlink" title="一、为什么需要「桥」：两个世界，两种语言"></a>一、为什么需要「桥」：两个世界，两种语言</h2><p>任何一个 iOS 上的 RN 工程，运行时的内存里都住着两个世界：</p>
-<pre><code class="mermaid">flowchart LR
+<pre class="mermaid">flowchart LR
     subgraph JS世界[JS 世界]
         A[JavaScript 引擎&lt;br&#x2F;&gt;Hermes &#x2F; JSC]
         B[React 组件&lt;br&#x2F;&gt;业务逻辑]
@@ -172,7 +172,7 @@
     A --- E[桥 Bridge]
     B --- E
     E --- C
-    E --- D</code></pre>
+    E --- D</pre>
 
 <ul>
 <li><strong>JS 世界</strong>：页面 UI、布局、交互逻辑，跑在 JS 引擎里，只会说 JavaScript；</li>
@@ -250,7 +250,7 @@
 
 <p>到这里，<strong>跨语言的第一跳完成</strong>：JS 报名字 → Codegen 写死的表 → OC 运行时按 selector 找到方法体。</p>
 <h2 id="四、第二跳的「翻译表」是怎么生成的：一次调用全流程"><a href="#四、第二跳的「翻译表」是怎么生成的：一次调用全流程" class="headerlink" title="四、第二跳的「翻译表」是怎么生成的：一次调用全流程"></a>四、第二跳的「翻译表」是怎么生成的：一次调用全流程</h2><p>把上面串起来，JS → Native 的第一跳全景如下：</p>
-<pre><code class="mermaid">sequenceDiagram
+<pre class="mermaid">sequenceDiagram
     participant JS as JS 业务代码
     participant REG as TurboModuleRegistry
     participant JSI as JSI 层（Codegen 生成）
@@ -265,7 +265,7 @@
     OC-&gt;&gt;RT: performSelector(selector)
     RT--&gt;&gt;OC: 命中方法体，开始执行
     OC--&gt;&gt;JSI: resolve(json) &#x2F; reject(error)
-    JSI--&gt;&gt;JS: await 拿到结果 &#x2F; 抛异常</code></pre>
+    JSI--&gt;&gt;JS: await 拿到结果 &#x2F; 抛异常</pre>
 
 <h2 id="五、第三跳：Bridge-库怎么调用主工程？（AppRouter-运行时路由）"><a href="#五、第三跳：Bridge-库怎么调用主工程？（AppRouter-运行时路由）" class="headerlink" title="五、第三跳：Bridge 库怎么调用主工程？（AppRouter 运行时路由）"></a>五、第三跳：Bridge 库怎么调用主工程？（AppRouter 运行时路由）</h2><h3 id="5-1-一个绕不开的问题：依赖方向"><a href="#5-1-一个绕不开的问题：依赖方向" class="headerlink" title="5.1 一个绕不开的问题：依赖方向"></a>5.1 一个绕不开的问题：依赖方向</h3><p>再看一眼架构，会发现一个矛盾：</p>
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">主工程（宿主 App）</span><br><span class="line">  │  依赖（import RNBridgeLib）</span><br><span class="line">  ▼</span><br><span class="line">RNBridgeLib（Bridge 库，包含 RNTranslationModule 等所有 RN 模块）</span><br></pre></td></tr></table></figure>
@@ -306,7 +306,7 @@
 <figure class="highlight swift"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 数据源（主工程 TranslateTypes.swift）</span></span><br><span class="line"><span class="keyword">final</span> <span class="keyword">class</span> <span class="title class_">TranslationLanguageConfigStore</span> &#123;</span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">loadValidConfig</span>() -&gt; [<span class="type">TranslateLanguageOption</span>] &#123; <span class="operator">...</span> &#125;  <span class="comment">// 读 UserDefaults 缓存 / 中英兜底</span></span><br><span class="line">    <span class="keyword">func</span> <span class="title function_">languageOption</span>(<span class="params">for</span> <span class="params">code</span>: <span class="type">String</span>) -&gt; <span class="type">TranslateLanguageOption</span>? &#123; <span class="operator">...</span> &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
 <p>第三跳全景：</p>
-<pre><code class="mermaid">sequenceDiagram
+<pre class="mermaid">sequenceDiagram
     participant RN as RNBridgeLib 转发层
     participant ROUTER as AppRouter（Pod）
     participant CAT as AppRouter+Translate（主工程 category）
@@ -320,7 +320,7 @@
     BRIDGE-&gt;&gt;STORE: languageOption(for:)
     STORE--&gt;&gt;BRIDGE: TranslateLanguageOption
     BRIDGE--&gt;&gt;CAT: JSON 数组字符串
-    CAT--&gt;&gt;RN: completion(json)</code></pre>
+    CAT--&gt;&gt;RN: completion(json)</pre>
 
 <h2 id="七、数据原路返回：Promise-的完整闭环"><a href="#七、数据原路返回：Promise-的完整闭环" class="headerlink" title="七、数据原路返回：Promise 的完整闭环"></a>七、数据原路返回：Promise 的完整闭环</h2><p>结果沿原路一层层往回传：</p>
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">Swift 拼好 JSON 字符串</span><br><span class="line">  → completion(json)                     // 主工程 Router 回调</span><br><span class="line">  → RNBridgeLib 的 completion block</span><br><span class="line">      → resolve(result)                  // TurboModule 的 Promise resolve</span><br><span class="line">  → C++ 胶水 invokeObjCMethod 返回        // JSI 层</span><br><span class="line">  → JS 的 await 拿到值</span><br></pre></td></tr></table></figure>
@@ -369,7 +369,7 @@
 </tbody></table>
 <figure class="highlight ts"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 方式一：DeviceEventEmitter（全局）</span></span><br><span class="line"><span class="title class_">DeviceEventEmitter</span>.<span class="title function_">addListener</span>(<span class="string">&#x27;BleRssiChanged&#x27;</span>, <span class="function">(<span class="params">rssi</span>) =&gt;</span> &#123; ... &#125;);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 方式二：NativeEventEmitter（绑定具体模块）</span></span><br><span class="line"><span class="keyword">const</span> emitter = <span class="keyword">new</span> <span class="title class_">NativeEventEmitter</span>(<span class="title class_">SomeModule</span>);</span><br><span class="line">emitter.<span class="title function_">addListener</span>(<span class="string">&#x27;SomeEvent&#x27;</span>, <span class="function">(<span class="params">data</span>) =&gt;</span> &#123; ... &#125;);</span><br></pre></td></tr></table></figure>
 
-<h3 id="8-5-Native-→-RN-完整时序"><a href="#8-5-Native-→-RN-完整时序" class="headerlink" title="8.5 Native → RN 完整时序"></a>8.5 Native → RN 完整时序</h3><pre><code class="mermaid">sequenceDiagram
+<h3 id="8-5-Native-→-RN-完整时序"><a href="#8-5-Native-→-RN-完整时序" class="headerlink" title="8.5 Native → RN 完整时序"></a>8.5 Native → RN 完整时序</h3><pre class="mermaid">sequenceDiagram
     participant NS as NSNotificationCenter
     participant EM as EventEmitterManager (Native)
     participant JS as RN 组件
@@ -381,7 +381,7 @@
     NS-&gt;&gt;EM: postNotification BleRssiChanged
     EM-&gt;&gt;EM: dispatchToRN: 转数据
     EM-&gt;&gt;BUS: sendEventWithName(&#39;BleRssiChanged&#39;, body)
-    BUS--&gt;&gt;JS: 回调触发，更新 UI</code></pre>
+    BUS--&gt;&gt;JS: 回调触发，更新 UI</pre>
 
 <h3 id="8-6-对比：调用（RN→Native）vs-事件（Native→RN）"><a href="#8-6-对比：调用（RN→Native）vs-事件（Native→RN）" class="headerlink" title="8.6 对比：调用（RN→Native）vs 事件（Native→RN）"></a>8.6 对比：调用（RN→Native）vs 事件（Native→RN）</h3><table>
 <thead>
@@ -419,30 +419,30 @@
 </tbody></table>
 <p><strong>两者互补</strong>：RN 与 Native 交互 &#x3D; 「调用」解决<strong>一问一答</strong>（JS 问，Native 答），「事件」解决<strong>持续推送</strong>（Native 有变化就广播，JS 订阅收听）。</p>
 <h2 id="九、全景总览与核心结论"><a href="#九、全景总览与核心结论" class="headerlink" title="九、全景总览与核心结论"></a>九、全景总览与核心结论</h2><p>把整个调用链画成一张图：</p>
-<pre><code class="mermaid">flowchart TB
-    subgraph JS侧[JS 世界]
-        A[业务代码&lt;br&#x2F;&gt;TranslationLanguageConfig.ts]
-        B[TurboModuleRegistry.get&lt;br&#x2F;&gt;&#39;RNTranslationModule&#39;]
+<pre class="mermaid">flowchart TB
+    subgraph JS侧[&quot;JS 世界&quot;]
+        A[&quot;业务代码&lt;br&#x2F;&gt;TranslationLanguageConfig.ts&quot;]
+        B[&quot;TurboModuleRegistry.get&lt;br&#x2F;&gt;&#39;RNTranslationModule&#39;&quot;]
     end
 
-    subgraph 胶水层[Codegen 生成层]
-        C[methodMap_ 方法名 → C++ 函数]
-        D[@selector 写死绑定]
+    subgraph 胶水层[&quot;Codegen 生成层&quot;]
+        C[&quot;methodMap_ 方法名 → C++ 函数&quot;]
+        D[&quot;@selector 写死绑定&quot;]
     end
 
-    subgraph 库层[RNBridgeLib 转发层]
-        E[RNTranslationModule.mm&lt;br&#x2F;&gt;moduleName 注册 + 方法实现]
-        F[AppRouter openRouter]
+    subgraph 库层[&quot;RNBridgeLib 转发层&quot;]
+        E[&quot;RNTranslationModule.mm&lt;br&#x2F;&gt;moduleName 注册 + 方法实现&quot;]
+        F[&quot;AppRouter openRouter&quot;]
     end
 
-    subgraph 主工程[宿主 App 业务层]
-        G[AppRouter+Translate.m&lt;br&#x2F;&gt;category 并入 AppRouter]
-        H[TranslationLanguageConfigBridge&lt;br&#x2F;&gt;Swift @objc 桥接]
-        I[TranslationLanguageConfigStore&lt;br&#x2F;&gt;数据源]
+    subgraph 主工程[&quot;宿主 App 业务层&quot;]
+        G[&quot;AppRouter+Translate.m&lt;br&#x2F;&gt;category 并入 AppRouter&quot;]
+        H[&quot;TranslationLanguageConfigBridge&lt;br&#x2F;&gt;Swift @objc 桥接&quot;]
+        I[&quot;TranslationLanguageConfigStore&lt;br&#x2F;&gt;数据源&quot;]
     end
 
     A --&gt; B --&gt; C --&gt; D --&gt; E --&gt; F --&gt; G --&gt; H --&gt; I
-    I --&gt; H --&gt; G --&gt; F --&gt; E --&gt; D --&gt; C --&gt; B --&gt; A</code></pre>
+    I --&gt; H --&gt; G --&gt; F --&gt; E --&gt; D --&gt; C --&gt; B --&gt; A</pre>
 
 <p>核心结论：</p>
 <table>
@@ -575,5 +575,9 @@
 </div>
 
 <script src="/js/main.js"></script>
+
+  <script src="/js/vendor/mermaid.min.js"></script>
+  <script src="/js/mermaid-init.js"></script>
+
 </body>
 </html>

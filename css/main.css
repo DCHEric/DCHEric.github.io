@@ -1383,6 +1383,7 @@ pre.mermaid {
   overflow-x: auto;
 }
 code.mermaid { background: none; border: none; padding: 0; color: var(--text-0); }
+.mermaid svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 
 /* ─── CODE COPY BUTTON ───────────────────────────────────────── */
 .code-copy-btn {
